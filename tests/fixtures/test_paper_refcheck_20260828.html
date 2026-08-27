@@ -74,7 +74,9 @@ header.paper .context span:first-child { padding-left: 0; border-left: 0; }
 .scope-item strong { display: block; font-size: 13.5px; margin-bottom: 4px; }
 .scope-item span { display: block; color: var(--gray); font-size: 12px; line-height: 1.55; }
 .scope-item .scope-ok { color: var(--ok); font-weight: 600; }
+.scope-item .scope-bad { color: var(--bad); font-weight: 600; }
 .scope-item .scope-warn { color: var(--warn); font-weight: 600; }
+.scope-item .scope-info { color: var(--info); font-weight: 600; }
 .scope-item .scope-next { color: var(--info); font-weight: 600; }
 
 /* 区块：报刊式分栏与风险色边线，避免通用后台卡片堆叠 */
@@ -200,7 +202,7 @@ footer { text-align: center; color: #7d8884; font-size: 12px; margin-top: 30px;
 <div class="stat-card"><div class="num warn">1</div><div class="label">⚠️ 文献信息需修正</div></div>
 <div class="stat-card"><div class="num info">1</div><div class="label">🔗 对应、版本或待复核问题</div></div>
 </div>
-<section id="scope" class="scope review"><h2>本次核验范围</h2><p class="scope-intro">没有显示问题不等于没有检查。本报告已完成以下自动核验；标为“可继续由 AI 审读”的项目需要结合论文内容或目标期刊要求判断。</p><div class="scope-grid"><div class="scope-item"><strong>文献是否存在</strong><span class="scope-warn">发现 1 项：见下方详情</span><span>通过学术数据库核对每一条参考文献。</span></div><div class="scope-item"><strong>书目信息是否准确</strong><span class="scope-warn">发现 1 项：见下方详情</span><span>核对作者、年份、期刊、卷期页码和 DOI。</span></div><div class="scope-item"><strong>正文与文献列表是否对应</strong><span class="scope-warn">发现 1 项：见下方详情</span><span>查找正文漏列、列表未引和错配引用。</span></div><div class="scope-item"><strong>是否有重复条目</strong><span class="scope-ok">已检查：未发现问题</span><span>按 DOI、标题等信息识别重复参考文献。</span></div><div class="scope-item"><strong>时间线与预印本提醒</strong><span class="scope-ok">已检查：未发现问题</span><span>识别未来年份和可能已有正式版本的预印本。</span></div><div class="scope-item"><strong>引用是否真正支撑论述</strong><span class="scope-next">可继续由 AI 审读</span><span>需要结合正文和文献内容判断，不能只靠数据库自动决定。</span></div><div class="scope-item"><strong>格式是否前后一致</strong><span class="scope-next">可继续由 AI 审读</span><span>需按目标期刊要求检查格式规则是否统一。</span></div></div></section>
+<section id="scope" class="scope review"><h2>本次核验范围</h2><p class="scope-intro">没有显示问题不等于没有检查。本报告已完成以下自动核验；标为“可继续由 AI 审读”的项目需要结合论文内容或目标期刊要求判断。</p><div class="scope-grid"><div class="scope-item"><strong>文献是否存在</strong><span class="scope-bad">疑似不存在 1 项：见下方详情</span><span>通过学术数据库核对每一条参考文献。</span></div><div class="scope-item"><strong>书目信息是否准确</strong><span class="scope-warn">发现 1 项：见下方详情</span><span>核对作者、年份、期刊、卷期页码和 DOI。</span></div><div class="scope-item"><strong>正文与文献列表是否对应</strong><span class="scope-warn">发现 1 项：见下方详情</span><span>查找正文漏列、列表未引和错配引用。</span></div><div class="scope-item"><strong>是否有重复条目</strong><span class="scope-ok">已检查：未发现问题</span><span>按 DOI、标题等信息识别重复参考文献。</span></div><div class="scope-item"><strong>时间线与预印本提醒</strong><span class="scope-ok">已检查：未发现问题</span><span>识别未来年份和可能已有正式版本的预印本。</span></div><div class="scope-item"><strong>引用是否真正支撑论述</strong><span class="scope-next">可继续由 AI 审读</span><span>需要结合正文和文献内容判断，不能只靠数据库自动决定。</span></div><div class="scope-item"><strong>格式是否前后一致</strong><span class="scope-next">可继续由 AI 审读</span><span>需按目标期刊要求检查格式规则是否统一。</span></div></div></section>
 <section id="sec-notfound" class="critical"><h2>❌ 疑似不存在的文献<span class="cnt2">1</span></h2><div class="item crit">
 <h3><span class="badge bad">R2</span> Bakker, A. B., Wang, H., &amp; Zhang, X. (2023). A comprehensive review of artificial intelligence in the workplace. Journal of Applied Psychology, 128(4)</h3>
 <p class="muted">各数据库均无匹配（标题相似度 &lt; 0.75），建议人工确认是否为 AI 编造。</p>

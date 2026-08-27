@@ -834,7 +834,9 @@ header.paper .context span:first-child { padding-left: 0; border-left: 0; }
 .scope-item strong { display: block; font-size: 13.5px; margin-bottom: 4px; }
 .scope-item span { display: block; color: var(--gray); font-size: 12px; line-height: 1.55; }
 .scope-item .scope-ok { color: var(--ok); font-weight: 600; }
+.scope-item .scope-bad { color: var(--bad); font-weight: 600; }
 .scope-item .scope-warn { color: var(--warn); font-weight: 600; }
+.scope-item .scope-info { color: var(--info); font-weight: 600; }
 .scope-item .scope-next { color: var(--info); font-weight: 600; }
 
 /* 区块：报刊式分栏与风险色边线，避免通用后台卡片堆叠 */
@@ -1113,24 +1115,44 @@ def build_report(paper_path, entries, citations, results, corr, dups,
 
     n_ok = n_found - n_mm
     n_other = n_unver + n_corr_cited + n_corr_listed + n_misc
+
+    def highest_severity(bad=0, warn=0, info=0):
+        if bad:
+            return "bad"
+        if warn:
+            return "warn"
+        if info:
+            return "info"
+        return "zero"
+
     cards = [
         (n_ok, "ok" if n_ok else "zero", "✅ 确认存在且一致"),
-        (n_notfound, "bad" if n_notfound else "zero", "❌ 投稿前优先处理"),
-        (n_mm, "warn" if n_mm else "zero", "⚠️ 文献信息需修正"),
-        (n_other, "info" if n_other else "zero", "🔗 对应、版本或待复核问题"),
+        (n_notfound, highest_severity(bad=n_notfound), "❌ 投稿前优先处理"),
+        (n_mm, highest_severity(warn=n_mm), "⚠️ 文献信息需修正"),
+        (n_other, highest_severity(warn=n_misc,
+                                   info=n_unver + n_corr_cited + n_corr_listed),
+         "🔗 对应、版本或待复核问题"),
     ]
     for num, cls, label in cards:
         H.append(f'<div class="stat-card"><div class="num {cls}">{num}</div>'
                  f'<div class="label">{label}</div></div>')
     H.append('</div>')
 
-    def scope_status(count):
+    def scope_status(count, level="warn"):
         if count:
-            return f'<span class="scope-warn">发现 {count} 项：见下方详情</span>'
+            return f'<span class="scope-{level}">发现 {count} 项：见下方详情</span>'
         return f'<span class="scope-ok">已检查：未发现问题</span>'
 
+    def existence_status():
+        status = []
+        if n_notfound:
+            status.append(f'<span class="scope-bad">疑似不存在 {n_notfound} 项：见下方详情</span>')
+        if n_unver:
+            status.append(f'<span class="scope-info">无法确认 {n_unver} 项：见下方详情</span>')
+        return "".join(status) or '<span class="scope-ok">已检查：未发现问题</span>'
+
     scope_items = [
-        ("文献是否存在", scope_status(n_notfound + n_unver),
+        ("文献是否存在", existence_status(),
          "通过学术数据库核对每一条参考文献。"),
         ("书目信息是否准确", scope_status(n_mm),
          "核对作者、年份、期刊、卷期页码和 DOI。"),

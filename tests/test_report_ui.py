@@ -7,6 +7,8 @@ import unittest
 
 SCRIPT_PATH = (pathlib.Path(__file__).resolve().parents[1]
                / "ob-reference-check" / "scripts" / "refcheck.py")
+FIXTURE_PATH = (pathlib.Path(__file__).resolve().parent / "fixtures"
+                / "test_paper_refcheck_20260828.html")
 SPEC = importlib.util.spec_from_file_location("refcheck", SCRIPT_PATH)
 REFCHECK = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(REFCHECK)
@@ -39,6 +41,42 @@ class ReportUiTest(unittest.TestCase):
 
         for anchor in ("overview", "scope", "sec-appro", "sec-format", "appendix"):
             self.assertIn(f'id="{anchor}"', report)
+
+    def test_fixture_retains_navigation_and_ai_follow_up_guidance(self):
+        report = FIXTURE_PATH.read_text(encoding="utf-8")
+
+        self.assertIn('<div class="report-layout">', report)
+        self.assertIn('<main class="report-main">', report)
+        self.assertIn('可继续由 AI 审读。', report)
+        self.assertIn('继续审读引用恰当性和格式一致性。', report)
+
+    def test_severity_preserves_unverified_and_warning_issues(self):
+        report = REFCHECK.build_report(
+            "severity.md",
+            [
+                {"id": "R1", "raw": "Author, A. (2024). Unverified.", "doi": None,
+                 "title": "Unverified", "year": "2024", "venue": "Journal"},
+                {"id": "R2", "raw": "Author, B. (2024). Duplicate.", "doi": None,
+                 "title": "Duplicate", "year": "2024", "venue": "Journal"},
+            ],
+            [],
+            {
+                "R1": {"status": "unverified", "mismatches": [], "links": {}},
+                "R2": {"status": "found", "mismatches": [], "links": {}},
+            },
+            {"cited_but_missing_in_list": [], "listed_but_never_cited": []},
+            [{"ids": ["R1", "R2"], "by": "title"}], [], [], {},
+        )
+
+        self.assertIn(
+            '<div class="num warn">2</div><div class="label">🔗 对应、版本或待复核问题</div>',
+            report,
+        )
+        self.assertIn('class="item warn"', report)
+        self.assertIn('class="badge warn"', report)
+        self.assertIn('<span class="scope-info">无法确认 1 项：见下方详情</span>', report)
+        self.assertNotIn('<span class="scope-warn">发现 1 项：见下方详情</span>'
+                         '<span>通过学术数据库核对每一条参考文献。</span>', report)
 
 
 if __name__ == "__main__":
