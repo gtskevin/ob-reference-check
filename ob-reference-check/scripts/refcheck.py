@@ -612,7 +612,7 @@ class Verifier:
             links["s2"] = f"https://www.semanticscholar.org/paper/{rec['id']}"
         if "openalex" not in links:
             q = urllib.parse.quote(rec.get("title") or "")
-            links["openalex_search"] = f"https://openalex.org/works?search={q}"
+            links["google_scholar"] = f"https://scholar.google.com/scholar?q={q}"
         return links
 
 
@@ -909,10 +909,6 @@ a:focus-visible { outline: 2px solid var(--info); outline-offset: 2px;
   color: var(--gray); font-size: 13.5px; margin: 10px 0 14px; background: var(--tint); }
 footer { text-align: center; color: #7d8884; font-size: 12px; margin-top: 30px;
   line-height: 1.6; }
-.return-nav { position: fixed; right: 20px; bottom: 20px; z-index: 60; padding: 9px 13px;
-  color: #fff; background: #24473f; border: 1px solid #24473f; border-radius: 3px;
-  box-shadow: 0 3px 12px rgba(23,35,33,.18); font-size: 13px; font-weight: 700; text-decoration: none; }
-.return-nav:hover { background: #172f2a; color: #fff; text-decoration: none; }
 @media (max-width: 640px) {
   body { padding: 22px 12px 44px; }
   header.paper { padding-top: 16px; }
@@ -930,7 +926,6 @@ footer { text-align: center; color: #7d8884; font-size: 12px; margin-top: 30px;
   section { padding: 17px 16px 7px; }
   section, #overview { scroll-margin-top: 180px; }
   .scope-grid { grid-template-columns: 1fr; }
-  .return-nav { right: 12px; bottom: 12px; }
   .appendix thead th { position: static; }
   table { display: block; overflow-x: auto; white-space: nowrap; }
   td { white-space: normal; }
@@ -939,7 +934,6 @@ footer { text-align: center; color: #7d8884; font-size: 12px; margin-top: 30px;
   body { background: #fff; padding: 0; }
   .report-layout { display: block; }
   .topnav { display: none; }
-  .return-nav { display: none; }
   section { border: none; page-break-inside: avoid; }
 }
 """
@@ -967,6 +961,21 @@ def _links_html(links):
         parts.append(f'<a class="lnk" href="{html_mod.escape(links["google_scholar"])}"'
                      f' target="_blank">Scholar 搜索 ↗</a>')
     return "".join(parts) if parts else '<span class="muted">（无链接）</span>'
+
+
+def _report_links(result):
+    """为报告统一复核入口，兼容旧缓存中保存的 OpenAlex 搜索链接。"""
+    links = dict(result.get("links") or {})
+    if result.get("status") != "found" or "openalex_search" not in links:
+        return links
+    record = result.get("record") or {}
+    title = record.get("title") or ""
+    if not title:
+        return links
+    links.pop("openalex_search")
+    q = urllib.parse.quote(title)
+    links["google_scholar"] = f"https://scholar.google.com/scholar?q={q}"
+    return links
 
 
 def _nav_cnt(n, hot=""):
@@ -1009,7 +1018,7 @@ def build_report(paper_path, entries, citations, results, corr, dups,
         nf_rows.append(f"""<div class="item crit">
 <h3>{_badge(eid, 'bad')} {esc(e['raw'][:150])}</h3>
 <p class="muted">各数据库均无匹配（标题相似度 &lt; 0.75），建议人工确认是否为 AI 编造。</p>
-<p>复核：{_links_html(r.get('links') or {})}</p>
+<p>复核：{_links_html(_report_links(r))}</p>
 </div>""")
     if nf_rows:
         sections.append(("sec-notfound", "❌ 疑似不存在的文献", "疑似编造",
@@ -1029,7 +1038,7 @@ def build_report(paper_path, entries, citations, results, corr, dups,
 <h3>{_badge(eid, 'warn')} {esc(e['raw'][:150])}</h3>
 <table><tr><th>字段</th><th>论文所写</th><th>数据库记录（应改为此值）</th></tr>
 {rows}</table>
-<p>复核：{_links_html(r.get('links') or {})}</p>
+<p>复核：{_links_html(_report_links(r))}</p>
 </div>""")
     if mm_rows:
         sections.append(("sec-meta", "⚠️ 元数据不一致", "元数据",
@@ -1214,11 +1223,10 @@ def build_report(paper_path, entries, citations, results, corr, dups,
         H.append(f'<tr><td>{esc(e["id"])}</td>'
                  f'<td class="ref-text">{desc}</td>'
                  f'<td>{_badge(label, icon)}</td>'
-                 f'<td>{_links_html(r.get("links") or {})}</td></tr>')
+                 f'<td>{_links_html(_report_links(r))}</td></tr>')
     H.append("</tbody></table></section>")
 
     H.append("""<footer>由 ob-reference-check 生成 · 本报告用于投稿前的参考文献核验与人工复核</footer>
-<a class="return-nav" href="#contents" aria-label="返回报告目录">目录 ↑</a>
 </main>
 </div>
 </div></body></html>""")

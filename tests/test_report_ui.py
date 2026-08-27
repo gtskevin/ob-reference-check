@@ -61,7 +61,7 @@ class ReportUiTest(unittest.TestCase):
         self.assertIn('section, #overview { scroll-margin-top: 180px; }', report)
         self.assertIn('@media print {\n  body { background: #fff; padding: 0; }\n  .report-layout { display: block; }',
                       report)
-        self.assertIn('  .return-nav { display: none; }', report)
+        self.assertNotIn('class="return-nav"', report)
         self.assertIn('可继续由 AI 审读', report)
         self.assertEqual(report.count('可继续由 AI 审读。'), 2)
         self.assertIn('继续审读引用恰当性和格式一致性。', report)
@@ -72,6 +72,32 @@ class ReportUiTest(unittest.TestCase):
         for href in parser.hrefs:
             self.assertTrue(href.startswith("#"))
             self.assertIn(href[1:], parser.ids)
+
+    def test_found_record_uses_google_scholar_search_when_no_direct_record_link(self):
+        links = REFCHECK.Verifier._record_links(
+            {"_source": "crossref", "title": "A verified reference", "doi": None},
+            {"raw": "Author, A. (2024). A verified reference."},
+        )
+
+        self.assertIn("google_scholar", links)
+        self.assertNotIn("openalex_search", links)
+        self.assertIn("scholar.google.com/scholar?q=", links["google_scholar"])
+
+    def test_found_record_replaces_cached_openalex_search_in_report(self):
+        report = REFCHECK.build_report(
+            "cached.md",
+            [{"id": "R1", "raw": "Author, A. (2024). Cached title.", "doi": None,
+              "title": "Cached title", "year": "2024", "venue": "Journal"}],
+            [],
+            {"R1": {"status": "found", "mismatches": [],
+                    "record": {"title": "Cached title"},
+                    "links": {"openalex_search": "https://openalex.org/works?search=Cached"}}},
+            {"cited_but_missing_in_list": [], "listed_but_never_cited": []},
+            [], [], [], {},
+        )
+
+        self.assertIn("Scholar 搜索 ↗", report)
+        self.assertNotIn("OpenAlex 搜索 ↗", report)
 
     def test_fixture_retains_navigation_and_ai_follow_up_guidance(self):
         report = FIXTURE_PATH.read_text(encoding="utf-8")

@@ -149,10 +149,6 @@ a:focus-visible { outline: 2px solid var(--info); outline-offset: 2px;
   color: var(--gray); font-size: 13.5px; margin: 10px 0 14px; background: var(--tint); }
 footer { text-align: center; color: #7d8884; font-size: 12px; margin-top: 30px;
   line-height: 1.6; }
-.return-nav { position: fixed; right: 20px; bottom: 20px; z-index: 60; padding: 9px 13px;
-  color: #fff; background: #24473f; border: 1px solid #24473f; border-radius: 3px;
-  box-shadow: 0 3px 12px rgba(23,35,33,.18); font-size: 13px; font-weight: 700; text-decoration: none; }
-.return-nav:hover { background: #172f2a; color: #fff; text-decoration: none; }
 @media (max-width: 640px) {
   body { padding: 22px 12px 44px; }
   header.paper { padding-top: 16px; }
@@ -170,7 +166,6 @@ footer { text-align: center; color: #7d8884; font-size: 12px; margin-top: 30px;
   section { padding: 17px 16px 7px; }
   section, #overview { scroll-margin-top: 180px; }
   .scope-grid { grid-template-columns: 1fr; }
-  .return-nav { right: 12px; bottom: 12px; }
   .appendix thead th { position: static; }
   table { display: block; overflow-x: auto; white-space: nowrap; }
   td { white-space: normal; }
@@ -179,7 +174,6 @@ footer { text-align: center; color: #7d8884; font-size: 12px; margin-top: 30px;
   body { background: #fff; padding: 0; }
   .report-layout { display: block; }
   .topnav { display: none; }
-  .return-nav { display: none; }
   section { border: none; page-break-inside: avoid; }
 }
 </style>
@@ -228,17 +222,16 @@ footer { text-align: center; color: #7d8884; font-size: 12px; margin-top: 30px;
 <table class="appendix"><thead><tr><th>ID</th><th>文献</th><th>状态</th><th>复核</th></tr></thead><tbody>
 <tr><td>R2</td><td class="ref-text">Bakker, A. B., Wang, H., &amp; Zhang, X. (2023). A comprehensive review of artificial intellig…</td><td><span class="badge bad">❌</span></td><td><a class="lnk" href="https://openalex.org/works?search=A%20comprehensive%20review%20of%20artificial%20intelligence%20in%20the%20workplace" target="_blank">OpenAlex 搜索 ↗</a><a class="lnk" href="https://scholar.google.com/scholar?q=A%20comprehensive%20review%20of%20artificial%20intelligence%20in%20the%20workplace" target="_blank">Scholar 搜索 ↗</a></td></tr>
 <tr><td>R8</td><td class="ref-text">Mayer, R. C., Davis, J. H., &amp; Schoorman, F. D. (1995). An integrative model of organizatio…</td><td><span class="badge warn">⚠️</span></td><td><a class="lnk doi" href="https://doi.org/10.5465/amr.1995.9508080335" target="_blank">DOI ↗</a><a class="lnk" href="https://openalex.org/W2142175015" target="_blank">OpenAlex ↗</a></td></tr>
-<tr><td>R1</td><td class="ref-text">Bakker, A. B., &amp; Demerouti, E. (2017). Job demands-resources theory: Taking stock and look…</td><td><span class="badge ok">✅</span></td><td><a class="lnk doi" href="https://doi.org/10.1037/ocp0000056" target="_blank">DOI ↗</a><a class="lnk" href="https://openalex.org/works?search=Job%20demands%E2%80%93resources%20theory%3A%20Taking%20stock%20and%20looking%20forward." target="_blank">OpenAlex 搜索 ↗</a></td></tr>
-<tr><td>R3</td><td class="ref-text">Dzindolet, M. T., Peterson, S. A., Pomranky, R. A., Pierce, L. G., &amp; Beck, H. P. (2003). T…</td><td><span class="badge ok">✅</span></td><td><a class="lnk doi" href="https://doi.org/10.1016/s1071-5819(03)00038-7" target="_blank">DOI ↗</a><a class="lnk" href="https://openalex.org/works?search=The%20role%20of%20trust%20in%20automation%20reliance" target="_blank">OpenAlex 搜索 ↗</a></td></tr>
-<tr><td>R4</td><td class="ref-text">Ferrario, A., Loi, M., &amp; Viganò, E. (2020). In AI we trust incrementally: A multi-layer mo…</td><td><span class="badge ok">✅</span></td><td><a class="lnk doi" href="https://doi.org/10.1007/s13347-019-00378-3" target="_blank">DOI ↗</a><a class="lnk" href="https://openalex.org/works?search=In%20AI%20We%20Trust%20Incrementally%3A%20a%20Multi-layer%20Model%20of%20Trust%20to%20Analyze%20Human-Artificial%20Intelligence%20Interactions" target="_blank">OpenAlex 搜索 ↗</a></td></tr>
-<tr><td>R5</td><td class="ref-text">Hobfoll, S. E. (1989). Conservation of resources: A new attempt at conceptualizing stress.…</td><td><span class="badge ok">✅</span></td><td><a class="lnk doi" href="https://doi.org/10.1037/0003-066x.44.3.513" target="_blank">DOI ↗</a><a class="lnk" href="https://openalex.org/works?search=Conservation%20of%20resources%3A%20A%20new%20attempt%20at%20conceptualizing%20stress." target="_blank">OpenAlex 搜索 ↗</a></td></tr>
-<tr><td>R6</td><td class="ref-text">Lee, J. D., &amp; See, K. A. (2004). Trust in automation: Designing for appropriate reliance. …</td><td><span class="badge ok">✅</span></td><td><a class="lnk doi" href="https://doi.org/10.1518/hfes.46.1.50.30392" target="_blank">DOI ↗</a><a class="lnk" href="https://openalex.org/works?search=Trust%20in%20Automation%3A%20Designing%20for%20Appropriate%20Reliance" target="_blank">OpenAlex 搜索 ↗</a></td></tr>
-<tr><td>R7</td><td class="ref-text">Mayer, R. C., &amp; Davis, J. H. (1999). The effect of the performance appraisal system on tru…</td><td><span class="badge ok">✅</span></td><td><a class="lnk doi" href="https://doi.org/10.1037/0021-9010.84.1.123" target="_blank">DOI ↗</a><a class="lnk" href="https://openalex.org/works?search=The%20effect%20of%20the%20performance%20appraisal%20system%20on%20trust%20for%20management%3A%20A%20field%20quasi-experiment." target="_blank">OpenAlex 搜索 ↗</a></td></tr>
-<tr><td>R9</td><td class="ref-text">Parasuraman, R., &amp; Riley, V. (1997). Humans and automation: Use, misuse, disuse, abuse. Hu…</td><td><span class="badge ok">✅</span></td><td><a class="lnk doi" href="https://doi.org/10.1518/001872097778543886" target="_blank">DOI ↗</a><a class="lnk" href="https://openalex.org/works?search=Humans%20and%20Automation%3A%20Use%2C%20Misuse%2C%20Disuse%2C%20Abuse" target="_blank">OpenAlex 搜索 ↗</a></td></tr>
-<tr><td>R10</td><td class="ref-text">Rahwan, I., Cebrian, M., Obradovich, N., Bongard, J., Bonnefon, J. F., Breazeal, C., &amp; Wel…</td><td><span class="badge ok">✅</span></td><td><a class="lnk doi" href="https://doi.org/10.1038/s41586-019-1138-y" target="_blank">DOI ↗</a><a class="lnk" href="https://openalex.org/works?search=Machine%20behaviour" target="_blank">OpenAlex 搜索 ↗</a></td></tr>
+<tr><td>R1</td><td class="ref-text">Bakker, A. B., &amp; Demerouti, E. (2017). Job demands-resources theory: Taking stock and look…</td><td><span class="badge ok">✅</span></td><td><a class="lnk doi" href="https://doi.org/10.1037/ocp0000056" target="_blank">DOI ↗</a><a class="lnk" href="https://scholar.google.com/scholar?q=Job%20demands%E2%80%93resources%20theory%3A%20Taking%20stock%20and%20looking%20forward." target="_blank">Scholar 搜索 ↗</a></td></tr>
+<tr><td>R3</td><td class="ref-text">Dzindolet, M. T., Peterson, S. A., Pomranky, R. A., Pierce, L. G., &amp; Beck, H. P. (2003). T…</td><td><span class="badge ok">✅</span></td><td><a class="lnk doi" href="https://doi.org/10.1016/s1071-5819(03)00038-7" target="_blank">DOI ↗</a><a class="lnk" href="https://scholar.google.com/scholar?q=The%20role%20of%20trust%20in%20automation%20reliance" target="_blank">Scholar 搜索 ↗</a></td></tr>
+<tr><td>R4</td><td class="ref-text">Ferrario, A., Loi, M., &amp; Viganò, E. (2020). In AI we trust incrementally: A multi-layer mo…</td><td><span class="badge ok">✅</span></td><td><a class="lnk doi" href="https://doi.org/10.1007/s13347-019-00378-3" target="_blank">DOI ↗</a><a class="lnk" href="https://scholar.google.com/scholar?q=In%20AI%20We%20Trust%20Incrementally%3A%20a%20Multi-layer%20Model%20of%20Trust%20to%20Analyze%20Human-Artificial%20Intelligence%20Interactions" target="_blank">Scholar 搜索 ↗</a></td></tr>
+<tr><td>R5</td><td class="ref-text">Hobfoll, S. E. (1989). Conservation of resources: A new attempt at conceptualizing stress.…</td><td><span class="badge ok">✅</span></td><td><a class="lnk doi" href="https://doi.org/10.1037/0003-066x.44.3.513" target="_blank">DOI ↗</a><a class="lnk" href="https://scholar.google.com/scholar?q=Conservation%20of%20resources%3A%20A%20new%20attempt%20at%20conceptualizing%20stress." target="_blank">Scholar 搜索 ↗</a></td></tr>
+<tr><td>R6</td><td class="ref-text">Lee, J. D., &amp; See, K. A. (2004). Trust in automation: Designing for appropriate reliance. …</td><td><span class="badge ok">✅</span></td><td><a class="lnk doi" href="https://doi.org/10.1518/hfes.46.1.50.30392" target="_blank">DOI ↗</a><a class="lnk" href="https://scholar.google.com/scholar?q=Trust%20in%20Automation%3A%20Designing%20for%20Appropriate%20Reliance" target="_blank">Scholar 搜索 ↗</a></td></tr>
+<tr><td>R7</td><td class="ref-text">Mayer, R. C., &amp; Davis, J. H. (1999). The effect of the performance appraisal system on tru…</td><td><span class="badge ok">✅</span></td><td><a class="lnk doi" href="https://doi.org/10.1037/0021-9010.84.1.123" target="_blank">DOI ↗</a><a class="lnk" href="https://scholar.google.com/scholar?q=The%20effect%20of%20the%20performance%20appraisal%20system%20on%20trust%20for%20management%3A%20A%20field%20quasi-experiment." target="_blank">Scholar 搜索 ↗</a></td></tr>
+<tr><td>R9</td><td class="ref-text">Parasuraman, R., &amp; Riley, V. (1997). Humans and automation: Use, misuse, disuse, abuse. Hu…</td><td><span class="badge ok">✅</span></td><td><a class="lnk doi" href="https://doi.org/10.1518/001872097778543886" target="_blank">DOI ↗</a><a class="lnk" href="https://scholar.google.com/scholar?q=Humans%20and%20Automation%3A%20Use%2C%20Misuse%2C%20Disuse%2C%20Abuse" target="_blank">Scholar 搜索 ↗</a></td></tr>
+<tr><td>R10</td><td class="ref-text">Rahwan, I., Cebrian, M., Obradovich, N., Bongard, J., Bonnefon, J. F., Breazeal, C., &amp; Wel…</td><td><span class="badge ok">✅</span></td><td><a class="lnk doi" href="https://doi.org/10.1038/s41586-019-1138-y" target="_blank">DOI ↗</a><a class="lnk" href="https://scholar.google.com/scholar?q=Machine%20behaviour" target="_blank">Scholar 搜索 ↗</a></td></tr>
 </tbody></table></section>
 <footer>由 ob-reference-check 生成 · 本报告用于投稿前的参考文献核验与人工复核</footer>
-<a class="return-nav" href="#contents" aria-label="返回报告目录">目录 ↑</a>
 </main>
 </div>
 </div></body></html>
