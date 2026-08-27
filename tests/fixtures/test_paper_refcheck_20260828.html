@@ -6,9 +6,9 @@
 <title>参考文献检查报告 — test_paper</title>
 <style>
 :root {
-  --ok: #047857; --bad: #b91c1c; --warn: #b45309; --info: #1d4ed8;
-  --gray: #64748b; --ink: #1e293b; --border: #e2e8f0; --bg: #f8fafc;
-  --card: #ffffff; --nav-h: 48px;
+  --ok: #166534; --bad: #a12a2a; --warn: #9a5a10; --info: #285f8f;
+  --gray: #64706f; --ink: #172321; --muted-ink: #44514e; --border: #d9ddd6;
+  --bg: #f3f2ed; --paper: #fffefa; --tint: #f7f7f2; --nav-h: 48px;
   --serif: Georgia, "Times New Roman", "Songti SC", "Noto Serif SC", serif;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
 }
@@ -18,58 +18,84 @@
 }
 body {
   font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
-  background: var(--bg); color: var(--ink); font-size: 14px; line-height: 1.75;
-  padding: 24px 16px 60px;
+  background: var(--bg); color: var(--ink); font-size: 14px; line-height: 1.78;
+  padding: 36px 20px 72px;
 }
-.container { max-width: 1080px; margin: 0 auto; }
-header.paper { background: #12283f; color: #f8fafc; border-radius: 12px;
-  padding: 28px 32px 24px; margin-bottom: 14px;
-  border-top: 3px solid #b08d3e; }
-header.paper h1 { font-family: var(--serif); font-size: 24px; font-weight: 700;
-  letter-spacing: .02em; }
-header.paper .meta { font-size: 13px; opacity: .78; margin-top: 6px;
+.container { max-width: 1120px; margin: 0 auto; }
+header.paper { border-top: 4px solid #315e55; padding: 20px 0 25px; margin-bottom: 12px; }
+.eyebrow { color: #315e55; font-size: 11px; font-weight: 700; letter-spacing: .13em;
+  text-transform: uppercase; margin-bottom: 9px; }
+header.paper h1 { font-family: var(--serif); font-size: clamp(28px, 4vw, 38px); font-weight: 700;
+  letter-spacing: .015em; line-height: 1.15; }
+header.paper .meta { color: var(--muted-ink); font-size: 13px; margin-top: 9px;
   font-variant-numeric: tabular-nums; }
+header.paper .context { display: flex; flex-wrap: wrap; gap: 7px 18px; margin-top: 17px;
+  font-size: 12.5px; color: var(--muted-ink); }
+header.paper .context span { padding-left: 10px; border-left: 1px solid #a8b7b0; }
+header.paper .context span:first-child { padding-left: 0; border-left: 0; }
 
-/* 吸顶导航 */
-.topnav { position: sticky; top: 0; z-index: 50; background: rgba(255,255,255,.94);
-  backdrop-filter: blur(8px); border: 1px solid var(--border); border-radius: 10px;
-  padding: 7px 12px; margin-bottom: 18px; display: flex; flex-wrap: wrap;
-  gap: 4px; align-items: center; }
-.topnav a { font-size: 13px; color: #334155; text-decoration: none;
-  padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
-.topnav a:hover { background: #f1f5f9; text-decoration: none; color: var(--ink); }
+/* 目录：桌面端固定在内容左侧，长报告中始终可见。 */
+.report-layout { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 34px; align-items: start; }
+.topnav { position: sticky; top: 24px; display: block; margin: 0; padding: 15px 0;
+  border-top: 2px solid #315e55; border-bottom: 1px solid var(--border); box-shadow: none; background: transparent; }
+.topnav::before { display: block; margin: 0 0 9px; content: "报告目录"; }
+.topnav a { display: block; padding: 8px 2px; font-size: 14px; border-bottom: 1px solid #e3e5de;
+  font-weight: 600; color: var(--muted-ink); text-decoration: none; white-space: nowrap; }
+.topnav a:hover { border-bottom-color: #315e55; color: var(--ink); text-decoration: none; }
+.report-main { min-width: 0; }
 .topnav a .cnt { font-size: 12px; font-weight: 700; margin-left: 3px;
-  color: #94a3b8; font-variant-numeric: tabular-nums; }
+  color: #84908c; font-variant-numeric: tabular-nums; }
 .topnav a .cnt.hot-bad { color: var(--bad); }
 .topnav a .cnt.hot-warn { color: var(--warn); }
 .topnav a .cnt.hot-info { color: var(--info); }
 
-/* 汇总卡片 */
-.summary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
-  gap: 10px; margin-bottom: 22px; }
-.stat-card { background: var(--card); border: 1px solid var(--border);
-  border-radius: 10px; padding: 13px 16px; text-align: center; }
+/* 汇总：只呈现读者需要先决定的四类信息 */
+.overview-heading { display: flex; justify-content: space-between; gap: 18px; align-items: end;
+  margin-bottom: 12px; }
+.overview-heading h2 { font-family: var(--serif); font-size: 20px; line-height: 1.2; }
+.overview-heading p { color: var(--gray); font-size: 12.5px; text-align: right; }
+.summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); margin-bottom: 32px;
+  background: var(--paper); border: 1px solid var(--border); }
+.stat-card { padding: 17px 18px 16px; border-right: 1px solid var(--border); }
+.stat-card:last-child { border-right: 0; }
 .stat-card .num { font-size: 26px; font-weight: 700;
-  font-variant-numeric: tabular-nums; }
-.stat-card .num.zero { font-size: 19px; color: #94a3b8; }
-.stat-card .label { font-size: 12px; color: var(--gray); margin-top: 3px; }
+  font-variant-numeric: tabular-nums; line-height: 1; }
+.stat-card .num.zero { font-size: 22px; color: #82908a; }
+.stat-card .label { font-size: 12px; color: var(--gray); margin-top: 7px; }
 .num.ok { color: var(--ok); } .num.bad { color: var(--bad); }
 .num.warn { color: var(--warn); } .num.info { color: var(--info); }
 
-/* 区块 */
-section { background: var(--card); border: 1px solid var(--border);
-  border-radius: 12px; padding: 20px 26px 10px; margin-bottom: 16px; }
-section h2 { font-family: var(--serif); font-size: 18px; font-weight: 700;
-  padding-bottom: 10px; margin-bottom: 4px;
+/* 核验范围：即使没有异常，也让用户知道检查过什么 */
+.scope { background: var(--tint); border-left-color: #78918a; }
+.scope-intro { color: var(--muted-ink); font-size: 13.5px; margin: 0 0 14px; }
+.scope-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--border);
+  border: 1px solid var(--border); margin: 6px 0 12px; }
+.scope-item { background: var(--paper); padding: 13px 14px; min-height: 88px; }
+.scope-item strong { display: block; font-size: 13.5px; margin-bottom: 4px; }
+.scope-item span { display: block; color: var(--gray); font-size: 12px; line-height: 1.55; }
+.scope-item .scope-ok { color: var(--ok); font-weight: 600; }
+.scope-item .scope-warn { color: var(--warn); font-weight: 600; }
+.scope-item .scope-next { color: var(--info); font-weight: 600; }
+
+/* 区块：报刊式分栏与风险色边线，避免通用后台卡片堆叠 */
+section { background: var(--paper); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  padding: 23px 28px 11px; margin-bottom: 18px; border-left: 4px solid #9aa8a2; }
+section, #overview { scroll-margin-top: 72px; }
+section.critical { border-left-color: var(--bad); }
+section.attention { border-left-color: var(--warn); }
+section.notice { border-left-color: var(--info); }
+section.review { border-left-color: #78918a; }
+section h2 { font-family: var(--serif); font-size: 20px; font-weight: 700;
+  padding-bottom: 11px; margin-bottom: 4px; line-height: 1.3;
   border-bottom: 1px solid var(--border); }
 section h2 .cnt2 { font-family: -apple-system, "PingFang SC", sans-serif;
   font-size: 13px; font-weight: 700; color: var(--gray);
   margin-left: 8px; font-variant-numeric: tabular-nums; }
 section h3 { font-size: 14px; font-weight: 600; margin: 10px 0 2px; color: #334155; }
 
-/* 详情行: 拍平的 hairline 行，不再套卡片 */
-.item { padding: 13px 2px 13px 14px; border-bottom: 1px solid var(--border);
-  border-left: 3px solid transparent; }
+/* 详情行：不再套卡片，保持长文本的阅读节奏 */
+.item { padding: 15px 4px 15px 15px; border-bottom: 1px solid var(--border);
+  border-left: 2px solid transparent; }
 .item:last-child, .item:last-of-type { border-bottom: none; }
 .item.crit { border-left-color: var(--bad); }
 .item.warn { border-left-color: var(--warn); }
@@ -79,20 +105,20 @@ section h3 { font-size: 14px; font-weight: 600; margin: 10px 0 2px; color: #3341
 .item p { font-size: 13.5px; }
 .muted { color: var(--gray); font-size: 12.5px; }
 
-/* 徽章: 描边样式，降饱和 */
+/* 徽章：状态可读，颜色只是第二通道 */
 .badge { display: inline-block; font-size: 12px; padding: 1px 9px;
-  border-radius: 999px; font-weight: 600; margin-right: 6px;
-  white-space: nowrap; background: #fff; border: 1px solid var(--border);
+  border-radius: 3px; font-weight: 600; margin-right: 6px;
+  white-space: nowrap; background: #fffefa; border: 1px solid var(--border);
   color: var(--gray); }
-.badge.ok { color: var(--ok); border-color: #a7d8c5; }
-.badge.bad { color: var(--bad); border-color: #e8c4c4; }
-.badge.warn { color: var(--warn); border-color: #e8d4b0; }
-.badge.info { color: var(--info); border-color: #c3d3f0; }
+.badge.ok { color: var(--ok); border-color: #b5cfb3; }
+.badge.bad { color: var(--bad); border-color: #dfbcbc; }
+.badge.warn { color: var(--warn); border-color: #dfc89e; }
+.badge.info { color: var(--info); border-color: #b6cce0; }
 
 /* 表格 */
 table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin: 8px 0; }
-th { text-align: left; background: #f8fafc; padding: 8px 12px; font-size: 12.5px;
-  color: #475569; border-bottom: 1px solid var(--border); }
+th { text-align: left; background: var(--tint); padding: 9px 12px; font-size: 12.5px;
+  color: var(--muted-ink); border-bottom: 1px solid var(--border); }
 td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top;
   font-variant-numeric: tabular-nums; }
 td:first-child { font-family: var(--mono); font-size: 12.5px; }
@@ -101,28 +127,47 @@ td.val-db { color: var(--ok); font-weight: 700; }
 
 /* 附录长表: 表头吸顶 */
 .appendix thead th { position: sticky; top: var(--nav-h); z-index: 10;
-  background: #f8fafc; box-shadow: 0 1px 0 var(--border); }
+  background: var(--tint); box-shadow: 0 1px 0 var(--border); }
 .appendix td.ref-text { font-size: 12.5px; }
+.appendix tbody tr:nth-child(even) { background: #fcfcf8; }
 
-/* 链接按钮: 中性描边，DOI 用深墨实心 */
+/* 复核入口：小而明确，不与主结论竞争 */
 .lnk { display: inline-block; font-size: 12px; padding: 2px 10px;
-  border-radius: 6px; border: 1px solid var(--border); color: #475569;
-  background: #fff; text-decoration: none; margin: 1px 3px 1px 0;
+  border-radius: 3px; border: 1px solid var(--border); color: var(--muted-ink);
+  background: #fffefa; text-decoration: none; margin: 1px 3px 1px 0;
   white-space: nowrap; }
-.lnk:hover { border-color: #94a3b8; color: var(--ink); text-decoration: none; }
-.lnk.doi { background: var(--ink); color: #fff; border-color: var(--ink); }
-.lnk.doi:hover { background: #0f172a; }
+.lnk:hover { border-color: #74827c; color: var(--ink); text-decoration: none; }
+.lnk.doi { background: #24473f; color: #fff; border-color: #24473f; }
+.lnk.doi:hover { background: #172f2a; }
 a { color: var(--info); text-decoration: none; }
 a:focus-visible { outline: 2px solid var(--info); outline-offset: 2px;
   border-radius: 4px; }
 
-.todo { border: 1px dashed #cbd5e1; border-radius: 10px; padding: 14px 18px;
-  color: var(--gray); font-size: 13.5px; margin: 10px 0 14px; background: #fafbfc; }
-footer { text-align: center; color: #94a3b8; font-size: 12px; margin-top: 30px;
+.todo { border-left: 2px solid #9aa8a2; padding: 13px 16px;
+  color: var(--gray); font-size: 13.5px; margin: 10px 0 14px; background: var(--tint); }
+footer { text-align: center; color: #7d8884; font-size: 12px; margin-top: 30px;
   line-height: 1.6; }
+.return-nav { position: fixed; right: 20px; bottom: 20px; z-index: 60; padding: 9px 13px;
+  color: #fff; background: #24473f; border: 1px solid #24473f; border-radius: 3px;
+  box-shadow: 0 3px 12px rgba(23,35,33,.18); font-size: 13px; font-weight: 700; text-decoration: none; }
+.return-nav:hover { background: #172f2a; color: #fff; text-decoration: none; }
 @media (max-width: 640px) {
-  body { padding: 14px 8px 40px; }
-  section { padding: 14px 14px 6px; border-radius: 9px; }
+  body { padding: 22px 12px 44px; }
+  header.paper { padding-top: 16px; }
+  header.paper h1 { font-size: 29px; }
+  .report-layout { display: block; }
+  .topnav { position: sticky; top: 0; display: flex; flex-wrap: wrap; margin-bottom: 22px;
+    padding: 10px 0; border-top: 1px solid var(--border); background: rgba(243,242,237,.96); }
+  .topnav::before { display: inline; margin: 0 7px 0 0; }
+  .topnav a { display: inline-block; padding: 5px 0; border-bottom: 2px solid transparent; }
+  .overview-heading { display: block; }
+  .overview-heading p { text-align: left; margin-top: 5px; }
+  .summary-grid { grid-template-columns: repeat(2, 1fr); }
+  .stat-card:nth-child(2) { border-right: 0; }
+  .stat-card:nth-child(-n+2) { border-bottom: 1px solid var(--border); }
+  section { padding: 17px 16px 7px; }
+  .scope-grid { grid-template-columns: 1fr; }
+  .return-nav { right: 12px; bottom: 12px; }
   table { display: block; overflow-x: auto; white-space: nowrap; }
   td { white-space: normal; }
 }
@@ -136,41 +181,44 @@ footer { text-align: center; color: #94a3b8; font-size: 12px; margin-top: 30px;
 <body>
 <div class="container">
 <header class="paper">
+  <div class="eyebrow">Reference integrity review</div>
   <h1>参考文献检查报告</h1>
   <div class="meta">test_paper ｜ 检查日期 2026-08-28 ｜
-  文献列表 10 条 ｜ 正文引用 14 处</div>
+  自动核验结果</div>
+  <div class="context"><span>文献列表 10 条</span>
+  <span>正文引用 14 处</span><span>支持 DOCX / PDF / Markdown</span></div>
 </header>
 
-<nav class="topnav"><a href="#overview">总览</a><a href="#sec-notfound">疑似编造<span class="cnt hot-bad">1</span></a><a href="#sec-meta">元数据<span class="cnt hot-warn">1</span></a><a href="#sec-corr">对应关系<span class="cnt hot-info">1</span></a><a href="#sec-appro">恰当性</a><a href="#sec-format">格式</a><a href="#appendix">附录 · 全部 10 条</a></nav>
-
-<div class="summary-grid" id="overview">
+<div class="report-layout">
+<nav class="topnav" id="contents" aria-label="报告目录"><a href="#overview">总览</a><a href="#scope">核验范围</a><a href="#sec-notfound">疑似编造<span class="cnt hot-bad">1</span></a><a href="#sec-meta">元数据<span class="cnt hot-warn">1</span></a><a href="#sec-corr">对应关系<span class="cnt hot-info">1</span></a><a href="#sec-appro">论述支撑</a><a href="#sec-format">格式统一</a><a href="#appendix">附录 · 全部 10 条</a></nav>
+<main class="report-main">
+<div id="overview" class="overview-heading"><h2>核验概览</h2>
+<p>优先处理红色项；其余问题可按下方目录逐项复核。</p></div>
+<div class="summary-grid">
 <div class="stat-card"><div class="num ok">8</div><div class="label">✅ 确认存在且一致</div></div>
-<div class="stat-card"><div class="num bad">1</div><div class="label">❌ 疑似不存在</div></div>
-<div class="stat-card"><div class="num warn">1</div><div class="label">⚠️ 元数据不一致</div></div>
-<div class="stat-card"><div class="num zero">0</div><div class="label">❓ 无法验证</div></div>
-<div class="stat-card"><div class="num info">1</div><div class="label">🔗 引用但列表缺失</div></div>
-<div class="stat-card"><div class="num zero">0</div><div class="label">🔗 列表有但未引用</div></div>
-<div class="stat-card"><div class="num zero">0</div><div class="label">⧉ 重复条目</div></div>
-<div class="stat-card"><div class="num zero">0</div><div class="label">⏰ 时间线/preprint</div></div>
+<div class="stat-card"><div class="num bad">1</div><div class="label">❌ 投稿前优先处理</div></div>
+<div class="stat-card"><div class="num warn">1</div><div class="label">⚠️ 文献信息需修正</div></div>
+<div class="stat-card"><div class="num info">1</div><div class="label">🔗 对应、版本或待复核问题</div></div>
 </div>
-<section id="sec-notfound"><h2>❌ 疑似不存在的文献<span class="cnt2">1</span></h2><div class="item crit">
+<section id="scope" class="scope review"><h2>本次核验范围</h2><p class="scope-intro">没有显示问题不等于没有检查。本报告已完成以下自动核验；标为“可继续由 AI 审读”的项目需要结合论文内容或目标期刊要求判断。</p><div class="scope-grid"><div class="scope-item"><strong>文献是否存在</strong><span class="scope-warn">发现 1 项：见下方详情</span><span>通过学术数据库核对每一条参考文献。</span></div><div class="scope-item"><strong>书目信息是否准确</strong><span class="scope-warn">发现 1 项：见下方详情</span><span>核对作者、年份、期刊、卷期页码和 DOI。</span></div><div class="scope-item"><strong>正文与文献列表是否对应</strong><span class="scope-warn">发现 1 项：见下方详情</span><span>查找正文漏列、列表未引和错配引用。</span></div><div class="scope-item"><strong>是否有重复条目</strong><span class="scope-ok">已检查：未发现问题</span><span>按 DOI、标题等信息识别重复参考文献。</span></div><div class="scope-item"><strong>时间线与预印本提醒</strong><span class="scope-ok">已检查：未发现问题</span><span>识别未来年份和可能已有正式版本的预印本。</span></div><div class="scope-item"><strong>引用是否真正支撑论述</strong><span class="scope-next">可继续由 AI 审读</span><span>需要结合正文和文献内容判断，不能只靠数据库自动决定。</span></div><div class="scope-item"><strong>格式是否前后一致</strong><span class="scope-next">可继续由 AI 审读</span><span>需按目标期刊要求检查格式规则是否统一。</span></div></div></section>
+<section id="sec-notfound" class="critical"><h2>❌ 疑似不存在的文献<span class="cnt2">1</span></h2><div class="item crit">
 <h3><span class="badge bad">R2</span> Bakker, A. B., Wang, H., &amp; Zhang, X. (2023). A comprehensive review of artificial intelligence in the workplace. Journal of Applied Psychology, 128(4)</h3>
 <p class="muted">各数据库均无匹配（标题相似度 &lt; 0.75），建议人工确认是否为 AI 编造。</p>
 <p>复核：<a class="lnk" href="https://openalex.org/works?search=A%20comprehensive%20review%20of%20artificial%20intelligence%20in%20the%20workplace" target="_blank">OpenAlex 搜索 ↗</a><a class="lnk" href="https://scholar.google.com/scholar?q=A%20comprehensive%20review%20of%20artificial%20intelligence%20in%20the%20workplace" target="_blank">Scholar 搜索 ↗</a></p>
 </div></section>
-<section id="sec-meta"><h2>⚠️ 元数据不一致<span class="cnt2">1</span></h2><div class="item warn">
+<section id="sec-meta" class="attention"><h2>⚠️ 元数据不一致<span class="cnt2">1</span></h2><div class="item warn">
 <h3><span class="badge warn">R8</span> Mayer, R. C., Davis, J. H., &amp; Schoorman, F. D. (1995). An integrative model of organizational trust. Academy of Management Review, 20(3), 709-712</h3>
 <table><tr><th>字段</th><th>论文所写</th><th>数据库记录（应改为此值）</th></tr>
 <tr><td>pages</td><td class='val-paper'>709-712</td><td class='val-db'>709-734</td></tr></table>
 <p>复核：<a class="lnk doi" href="https://doi.org/10.5465/amr.1995.9508080335" target="_blank">DOI ↗</a><a class="lnk" href="https://openalex.org/W2142175015" target="_blank">OpenAlex ↗</a></p>
 </div></section>
-<section id="sec-corr"><h2>🔗 对应关系问题<span class="cnt2">1</span></h2><h3>正文引了，但列表里没有</h3><div class="item info">
+<section id="sec-corr" class="notice"><h2>🔗 对应关系问题<span class="cnt2">1</span></h2><h3>正文引了，但列表里没有</h3><div class="item info">
 <p>“Prior field studies support this link in medical and logistics settings (Dzindolet et al., 2003; Parasuraman &amp; Riley, 1997; Pop et al., 2015).”</p>
 <p class="muted">→ 缺失条目：(Pop, 2015)</p>
 </div></section>
-<section id="sec-appro"><h2>⚠️ 引用恰当性（A 类深查）</h2><div class="todo">待 Claude 层补入：A 类承重引用逐条比对（正文句子 vs 文献摘要），输出 支撑 / 存疑 / 摘要不足 三档判断。</div></section>
-<section id="sec-format"><h2>📝 格式一致性</h2><div class="todo">待 Claude 层补入：同一 style 内部统一性审查（et al. 规则、&amp; vs and、页码符号、期刊名缩写等）。</div></section>
-<section id="appendix"><h2>附录 · 全部文献核验清单</h2><p class="muted">逐条可点击复核：✅/⚠️ 的 DOI 直达出版商页面；❌ 的检索链接确认是否真的查无此文。问题条目已排在前面。</p>
+<section id="sec-appro" class="review"><h2>进一步审读：引用是否支撑论述</h2><div class="todo"><strong>可继续由 AI 审读。</strong><br>本报告已完成自动核验。若希望继续检查，请在当前对话中回复：<b>“继续审读引用恰当性和格式一致性。”</b><br>AI 会先列出需要优先审读的关键引用；你可以确认或调整范围后，再继续比较正文论述与文献摘要，并检查格式内部是否一致。仅凭题名和书目信息，不能判断文献是否真正支撑正文论述。</div></section>
+<section id="sec-format" class="review"><h2>进一步审读：参考文献格式是否统一</h2><div class="todo"><strong>可继续由 AI 审读。</strong><br>本报告已完成自动核验。若希望继续检查，请在当前对话中回复：<b>“继续审读引用恰当性和格式一致性。”</b><br>AI 会先列出需要优先审读的关键引用；你可以确认或调整范围后，再继续比较正文论述与文献摘要，并检查格式内部是否一致。目标期刊的格式要求是最终依据。</div></section>
+<section id="appendix" class="review"><h2>附录 · 全部文献核验清单</h2><p class="muted">逐条可点击复核：✅/⚠️ 的 DOI 直达出版商页面；❌ 的检索链接确认是否真的查无此文。问题条目已排在前面。</p>
 <table class="appendix"><thead><tr><th>ID</th><th>文献</th><th>状态</th><th>复核</th></tr></thead><tbody>
 <tr><td>R2</td><td class="ref-text">Bakker, A. B., Wang, H., &amp; Zhang, X. (2023). A comprehensive review of artificial intellig…</td><td><span class="badge bad">❌</span></td><td><a class="lnk" href="https://openalex.org/works?search=A%20comprehensive%20review%20of%20artificial%20intelligence%20in%20the%20workplace" target="_blank">OpenAlex 搜索 ↗</a><a class="lnk" href="https://scholar.google.com/scholar?q=A%20comprehensive%20review%20of%20artificial%20intelligence%20in%20the%20workplace" target="_blank">Scholar 搜索 ↗</a></td></tr>
 <tr><td>R8</td><td class="ref-text">Mayer, R. C., Davis, J. H., &amp; Schoorman, F. D. (1995). An integrative model of organizatio…</td><td><span class="badge warn">⚠️</span></td><td><a class="lnk doi" href="https://doi.org/10.5465/amr.1995.9508080335" target="_blank">DOI ↗</a><a class="lnk" href="https://openalex.org/W2142175015" target="_blank">OpenAlex ↗</a></td></tr>
@@ -183,6 +231,8 @@ footer { text-align: center; color: #94a3b8; font-size: 12px; margin-top: 30px;
 <tr><td>R9</td><td class="ref-text">Parasuraman, R., &amp; Riley, V. (1997). Humans and automation: Use, misuse, disuse, abuse. Hu…</td><td><span class="badge ok">✅</span></td><td><a class="lnk doi" href="https://doi.org/10.1518/001872097778543886" target="_blank">DOI ↗</a><a class="lnk" href="https://openalex.org/works?search=Humans%20and%20Automation%3A%20Use%2C%20Misuse%2C%20Disuse%2C%20Abuse" target="_blank">OpenAlex 搜索 ↗</a></td></tr>
 <tr><td>R10</td><td class="ref-text">Rahwan, I., Cebrian, M., Obradovich, N., Bongard, J., Bonnefon, J. F., Breazeal, C., &amp; Wel…</td><td><span class="badge ok">✅</span></td><td><a class="lnk doi" href="https://doi.org/10.1038/s41586-019-1138-y" target="_blank">DOI ↗</a><a class="lnk" href="https://openalex.org/works?search=Machine%20behaviour" target="_blank">OpenAlex 搜索 ↗</a></td></tr>
 </tbody></table></section>
-<footer>脚本统计: {&quot;cache_hit&quot;: 0, &quot;api_openalex&quot;: 0, &quot;api_crossref&quot;: 0, &quot;api_s2&quot;: 0, &quot;failed&quot;: 0}
-<br>ob-reference-check 机械层报告（恰当性 / 格式两节由 Claude 层补入）</footer>
+<footer>由 ob-reference-check 生成 · 本报告用于投稿前的参考文献核验与人工复核</footer>
+<a class="return-nav" href="#contents" aria-label="返回报告目录">目录 ↑</a>
+</main>
+</div>
 </div></body></html>
