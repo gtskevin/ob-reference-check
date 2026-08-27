@@ -1,0 +1,17 @@
+{
+  "skill_name": "ob-reference-check",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "我下周要投稿一篇组织行为学论文，用 AI 辅助写的，担心参考文献有问题。帮我系统检查一遍：tests/fixtures/test_paper.md",
+      "expected_output": "生成检查报告，正确识别：1 条编造文献（Bakker, Wang, & Zhang 2023）、正文引用 Pop et al. 2015 缺失于文献列表、元数据/格式问题汇总，报告含可点击复核链接",
+      "files": ["tests/fixtures/test_paper.md"]
+    },
+    {
+      "id": 2,
+      "prompt": "帮我确认这条引用是不是真的存在，还是 AI 编造的：Bakker, A. B., Wang, H., & Zhang, X. (2023). A comprehensive review of artificial intelligence in the workplace. Journal of Applied Psychology, 128(4), 512-540.",
+      "expected_output": "通过数据库查证（而非凭记忆）后给出结论：该文献不存在/高度可疑，并给出可复核的检索链接",
+      "files": []
+    }
+  ]
+}

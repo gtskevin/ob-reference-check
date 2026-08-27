@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>参考文献检查报告 — test_paper</title>
+<style>
+:root {
+  --ok: #047857; --bad: #b91c1c; --warn: #b45309; --info: #1d4ed8;
+  --gray: #64748b; --ink: #1e293b; --border: #e2e8f0; --bg: #f8fafc;
+  --card: #ffffff; --nav-h: 48px;
+  --serif: Georgia, "Times New Roman", "Songti SC", "Noto Serif SC", serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+}
+body {
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  background: var(--bg); color: var(--ink); font-size: 14px; line-height: 1.75;
+  padding: 24px 16px 60px;
+}
+.container { max-width: 1080px; margin: 0 auto; }
+header.paper { background: #12283f; color: #f8fafc; border-radius: 12px;
+  padding: 28px 32px 24px; margin-bottom: 14px;
+  border-top: 3px solid #b08d3e; }
+header.paper h1 { font-family: var(--serif); font-size: 24px; font-weight: 700;
+  letter-spacing: .02em; }
+header.paper .meta { font-size: 13px; opacity: .78; margin-top: 6px;
+  font-variant-numeric: tabular-nums; }
+
+/* 吸顶导航 */
+.topnav { position: sticky; top: 0; z-index: 50; background: rgba(255,255,255,.94);
+  backdrop-filter: blur(8px); border: 1px solid var(--border); border-radius: 10px;
+  padding: 7px 12px; margin-bottom: 18px; display: flex; flex-wrap: wrap;
+  gap: 4px; align-items: center; }
+.topnav a { font-size: 13px; color: #334155; text-decoration: none;
+  padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
+.topnav a:hover { background: #f1f5f9; text-decoration: none; color: var(--ink); }
+.topnav a .cnt { font-size: 12px; font-weight: 700; margin-left: 3px;
+  color: #94a3b8; font-variant-numeric: tabular-nums; }
+.topnav a .cnt.hot-bad { color: var(--bad); }
+.topnav a .cnt.hot-warn { color: var(--warn); }
+.topnav a .cnt.hot-info { color: var(--info); }
+
+/* 汇总卡片 */
+.summary-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(155px, 1fr));
+  gap: 10px; margin-bottom: 22px; }
+.stat-card { background: var(--card); border: 1px solid var(--border);
+  border-radius: 10px; padding: 13px 16px; text-align: center; }
+.stat-card .num { font-size: 26px; font-weight: 700;
+  font-variant-numeric: tabular-nums; }
+.stat-card .num.zero { font-size: 19px; color: #94a3b8; }
+.stat-card .label { font-size: 12px; color: var(--gray); margin-top: 3px; }
+.num.ok { color: var(--ok); } .num.bad { color: var(--bad); }
+.num.warn { color: var(--warn); } .num.info { color: var(--info); }
+
+/* 区块 */
+section { background: var(--card); border: 1px solid var(--border);
+  border-radius: 12px; padding: 20px 26px 10px; margin-bottom: 16px; }
+section h2 { font-family: var(--serif); font-size: 18px; font-weight: 700;
+  padding-bottom: 10px; margin-bottom: 4px;
+  border-bottom: 1px solid var(--border); }
+section h2 .cnt2 { font-family: -apple-system, "PingFang SC", sans-serif;
+  font-size: 13px; font-weight: 700; color: var(--gray);
+  margin-left: 8px; font-variant-numeric: tabular-nums; }
+section h3 { font-size: 14px; font-weight: 600; margin: 10px 0 2px; color: #334155; }
+
+/* 详情行: 拍平的 hairline 行，不再套卡片 */
+.item { padding: 13px 2px 13px 14px; border-bottom: 1px solid var(--border);
+  border-left: 3px solid transparent; }
+.item:last-child, .item:last-of-type { border-bottom: none; }
+.item.crit { border-left-color: var(--bad); }
+.item.warn { border-left-color: var(--warn); }
+.item.info { border-left-color: var(--info); }
+.item h3 { margin: 0 0 5px; font-size: 14px; font-weight: 600;
+  word-break: break-all; }
+.item p { font-size: 13.5px; }
+.muted { color: var(--gray); font-size: 12.5px; }
+
+/* 徽章: 描边样式，降饱和 */
+.badge { display: inline-block; font-size: 12px; padding: 1px 9px;
+  border-radius: 999px; font-weight: 600; margin-right: 6px;
+  white-space: nowrap; background: #fff; border: 1px solid var(--border);
+  color: var(--gray); }
+.badge.ok { color: var(--ok); border-color: #a7d8c5; }
+.badge.bad { color: var(--bad); border-color: #e8c4c4; }
+.badge.warn { color: var(--warn); border-color: #e8d4b0; }
+.badge.info { color: var(--info); border-color: #c3d3f0; }
+
+/* 表格 */
+table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin: 8px 0; }
+th { text-align: left; background: #f8fafc; padding: 8px 12px; font-size: 12.5px;
+  color: #475569; border-bottom: 1px solid var(--border); }
+td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top;
+  font-variant-numeric: tabular-nums; }
+td:first-child { font-family: var(--mono); font-size: 12.5px; }
+td.val-paper { color: var(--bad); }
+td.val-db { color: var(--ok); font-weight: 700; }
+
+/* 附录长表: 表头吸顶 */
+.appendix thead th { position: sticky; top: var(--nav-h); z-index: 10;
+  background: #f8fafc; box-shadow: 0 1px 0 var(--border); }
+.appendix td.ref-text { font-size: 12.5px; }
+
+/* 链接按钮: 中性描边，DOI 用深墨实心 */
+.lnk { display: inline-block; font-size: 12px; padding: 2px 10px;
+  border-radius: 6px; border: 1px solid var(--border); color: #475569;
+  background: #fff; text-decoration: none; margin: 1px 3px 1px 0;
+  white-space: nowrap; }
+.lnk:hover { border-color: #94a3b8; color: var(--ink); text-decoration: none; }
+.lnk.doi { background: var(--ink); color: #fff; border-color: var(--ink); }
+.lnk.doi:hover { background: #0f172a; }
+a { color: var(--info); text-decoration: none; }
+a:focus-visible { outline: 2px solid var(--info); outline-offset: 2px;
+  border-radius: 4px; }
+
+.todo { border: 1px dashed #cbd5e1; border-radius: 10px; padding: 14px 18px;
+  color: var(--gray); font-size: 13.5px; margin: 10px 0 14px; background: #fafbfc; }
+footer { text-align: center; color: #94a3b8; font-size: 12px; margin-top: 30px;
+  line-height: 1.6; }
+@media (max-width: 640px) {
+  body { padding: 14px 8px 40px; }
+  section { padding: 14px 14px 6px; border-radius: 9px; }
+  table { display: block; overflow-x: auto; white-space: nowrap; }
+  td { white-space: normal; }
+}
+@media print {
+  body { background: #fff; padding: 0; }
+  .topnav { display: none; }
+  section { border: none; page-break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+<header class="paper">
+  <h1>参考文献检查报告</h1>
+  <div class="meta">test_paper ｜ 检查日期 2026-08-28 ｜
+  文献列表 10 条 ｜ 正文引用 14 处</div>
+</header>
+
+<nav class="topnav"><a href="#overview">总览</a><a href="#sec-notfound">疑似编造<span class="cnt hot-bad">1</span></a><a href="#sec-meta">元数据<span class="cnt hot-warn">1</span></a><a href="#sec-corr">对应关系<span class="cnt hot-info">1</span></a><a href="#sec-appro">恰当性</a><a href="#sec-format">格式</a><a href="#appendix">附录 · 全部 10 条</a></nav>
+
+<div class="summary-grid" id="overview">
+<div class="stat-card"><div class="num ok">8</div><div class="label">✅ 确认存在且一致</div></div>
+<div class="stat-card"><div class="num bad">1</div><div class="label">❌ 疑似不存在</div></div>
+<div class="stat-card"><div class="num warn">1</div><div class="label">⚠️ 元数据不一致</div></div>
+<div class="stat-card"><div class="num zero">0</div><div class="label">❓ 无法验证</div></div>
+<div class="stat-card"><div class="num info">1</div><div class="label">🔗 引用但列表缺失</div></div>
+<div class="stat-card"><div class="num zero">0</div><div class="label">🔗 列表有但未引用</div></div>
+<div class="stat-card"><div class="num zero">0</div><div class="label">⧉ 重复条目</div></div>
+<div class="stat-card"><div class="num zero">0</div><div class="label">⏰ 时间线/preprint</div></div>
+</div>
+<section id="sec-notfound"><h2>❌ 疑似不存在的文献<span class="cnt2">1</span></h2><div class="item crit">
+<h3><span class="badge bad">R2</span> Bakker, A. B., Wang, H., &amp; Zhang, X. (2023). A comprehensive review of artificial intelligence in the workplace. Journal of Applied Psychology, 128(4)</h3>
+<p class="muted">各数据库均无匹配（标题相似度 &lt; 0.75），建议人工确认是否为 AI 编造。</p>
+<p>复核：<a class="lnk" href="https://openalex.org/works?search=A%20comprehensive%20review%20of%20artificial%20intelligence%20in%20the%20workplace" target="_blank">OpenAlex 搜索 ↗</a><a class="lnk" href="https://scholar.google.com/scholar?q=A%20comprehensive%20review%20of%20artificial%20intelligence%20in%20the%20workplace" target="_blank">Scholar 搜索 ↗</a></p>
+</div></section>
+<section id="sec-meta"><h2>⚠️ 元数据不一致<span class="cnt2">1</span></h2><div class="item warn">
+<h3><span class="badge warn">R8</span> Mayer, R. C., Davis, J. H., &amp; Schoorman, F. D. (1995). An integrative model of organizational trust. Academy of Management Review, 20(3), 709-712</h3>
+<table><tr><th>字段</th><th>论文所写</th><th>数据库记录（应改为此值）</th></tr>
+<tr><td>pages</td><td class='val-paper'>709-712</td><td class='val-db'>709-734</td></tr></table>
+<p>复核：<a class="lnk doi" href="https://doi.org/10.5465/amr.1995.9508080335" target="_blank">DOI ↗</a><a class="lnk" href="https://openalex.org/W2142175015" target="_blank">OpenAlex ↗</a></p>
+</div></section>
+<section id="sec-corr"><h2>🔗 对应关系问题<span class="cnt2">1</span></h2><h3>正文引了，但列表里没有</h3><div class="item info">
+<p>“Prior field studies support this link in medical and logistics settings (Dzindolet et al., 2003; Parasuraman &amp; Riley, 1997; Pop et al., 2015).”</p>
+<p class="muted">→ 缺失条目：(Pop, 2015)</p>
+</div></section>
+<section id="sec-appro"><h2>⚠️ 引用恰当性（A 类深查）</h2><div class="todo">待 Claude 层补入：A 类承重引用逐条比对（正文句子 vs 文献摘要），输出 支撑 / 存疑 / 摘要不足 三档判断。</div></section>
+<section id="sec-format"><h2>📝 格式一致性</h2><div class="todo">待 Claude 层补入：同一 style 内部统一性审查（et al. 规则、&amp; vs and、页码符号、期刊名缩写等）。</div></section>
+<section id="appendix"><h2>附录 · 全部文献核验清单</h2><p class="muted">逐条可点击复核：✅/⚠️ 的 DOI 直达出版商页面；❌ 的检索链接确认是否真的查无此文。问题条目已排在前面。</p>
+<table class="appendix"><thead><tr><th>ID</th><th>文献</th><th>状态</th><th>复核</th></tr></thead><tbody>
+<tr><td>R2</td><td class="ref-text">Bakker, A. B., Wang, H., &amp; Zhang, X. (2023). A comprehensive review of artificial intellig…</td><td><span class="badge bad">❌</span></td><td><a class="lnk" href="https://openalex.org/works?search=A%20comprehensive%20review%20of%20artificial%20intelligence%20in%20the%20workplace" target="_blank">OpenAlex 搜索 ↗</a><a class="lnk" href="https://scholar.google.com/scholar?q=A%20comprehensive%20review%20of%20artificial%20intelligence%20in%20the%20workplace" target="_blank">Scholar 搜索 ↗</a></td></tr>
+<tr><td>R8</td><td class="ref-text">Mayer, R. C., Davis, J. H., &amp; Schoorman, F. D. (1995). An integrative model of organizatio…</td><td><span class="badge warn">⚠️</span></td><td><a class="lnk doi" href="https://doi.org/10.5465/amr.1995.9508080335" target="_blank">DOI ↗</a><a class="lnk" href="https://openalex.org/W2142175015" target="_blank">OpenAlex ↗</a></td></tr>
+<tr><td>R1</td><td class="ref-text">Bakker, A. B., &amp; Demerouti, E. (2017). Job demands-resources theory: Taking stock and look…</td><td><span class="badge ok">✅</span></td><td><a class="lnk doi" href="https://doi.org/10.1037/ocp0000056" target="_blank">DOI ↗</a><a class="lnk" href="https://openalex.org/works?search=Job%20demands%E2%80%93resources%20theory%3A%20Taking%20stock%20and%20looking%20forward." target="_blank">OpenAlex 搜索 ↗</a></td></tr>
+<tr><td>R3</td><td class="ref-text">Dzindolet, M. T., Peterson, S. A., Pomranky, R. A., Pierce, L. G., &amp; Beck, H. P. (2003). T…</td><td><span class="badge ok">✅</span></td><td><a class="lnk doi" href="https://doi.org/10.1016/s1071-5819(03)00038-7" target="_blank">DOI ↗</a><a class="lnk" href="https://openalex.org/works?search=The%20role%20of%20trust%20in%20automation%20reliance" target="_blank">OpenAlex 搜索 ↗</a></td></tr>
+<tr><td>R4</td><td class="ref-text">Ferrario, A., Loi, M., &amp; Viganò, E. (2020). In AI we trust incrementally: A multi-layer mo…</td><td><span class="badge ok">✅</span></td><td><a class="lnk doi" href="https://doi.org/10.1007/s13347-019-00378-3" target="_blank">DOI ↗</a><a class="lnk" href="https://openalex.org/works?search=In%20AI%20We%20Trust%20Incrementally%3A%20a%20Multi-layer%20Model%20of%20Trust%20to%20Analyze%20Human-Artificial%20Intelligence%20Interactions" target="_blank">OpenAlex 搜索 ↗</a></td></tr>
+<tr><td>R5</td><td class="ref-text">Hobfoll, S. E. (1989). Conservation of resources: A new attempt at conceptualizing stress.…</td><td><span class="badge ok">✅</span></td><td><a class="lnk doi" href="https://doi.org/10.1037/0003-066x.44.3.513" target="_blank">DOI ↗</a><a class="lnk" href="https://openalex.org/works?search=Conservation%20of%20resources%3A%20A%20new%20attempt%20at%20conceptualizing%20stress." target="_blank">OpenAlex 搜索 ↗</a></td></tr>
+<tr><td>R6</td><td class="ref-text">Lee, J. D., &amp; See, K. A. (2004). Trust in automation: Designing for appropriate reliance. …</td><td><span class="badge ok">✅</span></td><td><a class="lnk doi" href="https://doi.org/10.1518/hfes.46.1.50.30392" target="_blank">DOI ↗</a><a class="lnk" href="https://openalex.org/works?search=Trust%20in%20Automation%3A%20Designing%20for%20Appropriate%20Reliance" target="_blank">OpenAlex 搜索 ↗</a></td></tr>
+<tr><td>R7</td><td class="ref-text">Mayer, R. C., &amp; Davis, J. H. (1999). The effect of the performance appraisal system on tru…</td><td><span class="badge ok">✅</span></td><td><a class="lnk doi" href="https://doi.org/10.1037/0021-9010.84.1.123" target="_blank">DOI ↗</a><a class="lnk" href="https://openalex.org/works?search=The%20effect%20of%20the%20performance%20appraisal%20system%20on%20trust%20for%20management%3A%20A%20field%20quasi-experiment." target="_blank">OpenAlex 搜索 ↗</a></td></tr>
+<tr><td>R9</td><td class="ref-text">Parasuraman, R., &amp; Riley, V. (1997). Humans and automation: Use, misuse, disuse, abuse. Hu…</td><td><span class="badge ok">✅</span></td><td><a class="lnk doi" href="https://doi.org/10.1518/001872097778543886" target="_blank">DOI ↗</a><a class="lnk" href="https://openalex.org/works?search=Humans%20and%20Automation%3A%20Use%2C%20Misuse%2C%20Disuse%2C%20Abuse" target="_blank">OpenAlex 搜索 ↗</a></td></tr>
+<tr><td>R10</td><td class="ref-text">Rahwan, I., Cebrian, M., Obradovich, N., Bongard, J., Bonnefon, J. F., Breazeal, C., &amp; Wel…</td><td><span class="badge ok">✅</span></td><td><a class="lnk doi" href="https://doi.org/10.1038/s41586-019-1138-y" target="_blank">DOI ↗</a><a class="lnk" href="https://openalex.org/works?search=Machine%20behaviour" target="_blank">OpenAlex 搜索 ↗</a></td></tr>
+</tbody></table></section>
+<footer>脚本统计: {&quot;cache_hit&quot;: 0, &quot;api_openalex&quot;: 0, &quot;api_crossref&quot;: 0, &quot;api_s2&quot;: 0, &quot;failed&quot;: 0}
+<br>ob-reference-check 机械层报告（恰当性 / 格式两节由 Claude 层补入）</footer>
+</div></body></html>

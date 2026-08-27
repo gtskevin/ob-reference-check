@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+ob-reference-check-workspace/
+.playwright-mcp/
+.claude/
+.agents/
+skills-lock.json
+.DS_Store
