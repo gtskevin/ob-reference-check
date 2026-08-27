@@ -3,6 +3,7 @@
 import importlib.util
 import pathlib
 import unittest
+from html.parser import HTMLParser
 
 
 SCRIPT_PATH = (pathlib.Path(__file__).resolve().parents[1]
@@ -12,6 +13,27 @@ FIXTURE_PATH = (pathlib.Path(__file__).resolve().parent / "fixtures"
 SPEC = importlib.util.spec_from_file_location("refcheck", SCRIPT_PATH)
 REFCHECK = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(REFCHECK)
+
+
+class NavigationParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self._in_navigation = False
+        self.hrefs = []
+        self.ids = set()
+
+    def handle_starttag(self, tag, attrs):
+        attributes = dict(attrs)
+        if attributes.get("id"):
+            self.ids.add(attributes["id"])
+        if tag == "nav" and "topnav" in attributes.get("class", "").split():
+            self._in_navigation = True
+        if self._in_navigation and tag == "a" and attributes.get("href"):
+            self.hrefs.append(attributes["href"])
+
+    def handle_endtag(self, tag):
+        if tag == "nav":
+            self._in_navigation = False
 
 
 class ReportUiTest(unittest.TestCase):
@@ -35,12 +57,20 @@ class ReportUiTest(unittest.TestCase):
         self.assertIn('@media (max-width: 640px)', report)
         self.assertIn('.report-layout { display: block; }', report)
         self.assertIn('position: sticky; top: 0; display: flex; flex-wrap: wrap;', report)
+        self.assertIn('.appendix thead th { position: static; }', report)
+        self.assertIn('section, #overview { scroll-margin-top: 180px; }', report)
+        self.assertIn('@media print {\n  body { background: #fff; padding: 0; }\n  .report-layout { display: block; }',
+                      report)
         self.assertIn('可继续由 AI 审读', report)
         self.assertEqual(report.count('可继续由 AI 审读。'), 2)
         self.assertIn('继续审读引用恰当性和格式一致性。', report)
 
-        for anchor in ("overview", "scope", "sec-appro", "sec-format", "appendix"):
-            self.assertIn(f'id="{anchor}"', report)
+        parser = NavigationParser()
+        parser.feed(report)
+        self.assertTrue(parser.hrefs)
+        for href in parser.hrefs:
+            self.assertTrue(href.startswith("#"))
+            self.assertIn(href[1:], parser.ids)
 
     def test_fixture_retains_navigation_and_ai_follow_up_guidance(self):
         report = FIXTURE_PATH.read_text(encoding="utf-8")
@@ -77,6 +107,22 @@ class ReportUiTest(unittest.TestCase):
         self.assertIn('<span class="scope-info">无法确认 1 项：见下方详情</span>', report)
         self.assertNotIn('<span class="scope-warn">发现 1 项：见下方详情</span>'
                          '<span>通过学术数据库核对每一条参考文献。</span>', report)
+
+    def test_correspondence_scope_uses_info_severity(self):
+        report = REFCHECK.build_report(
+            "correspondence.md",
+            [{"id": "R1", "raw": "Author, A. (2024). Title.", "doi": None,
+              "title": "Title", "year": "2024", "venue": "Journal"}],
+            [],
+            {"R1": {"status": "found", "mismatches": [], "links": {}}},
+            {"cited_but_missing_in_list": [
+                {"sentence": "Claim (Missing, 2024).", "authors": ["Missing"], "year": "2024"},
+            ], "listed_but_never_cited": []},
+            [], [], [], {},
+        )
+
+        self.assertIn('<span class="scope-info">发现 1 项：见下方详情</span>', report)
+        self.assertNotIn('<span class="scope-warn">发现 1 项：见下方详情</span>', report)
 
 
 if __name__ == "__main__":

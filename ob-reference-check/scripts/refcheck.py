@@ -928,13 +928,16 @@ footer { text-align: center; color: #7d8884; font-size: 12px; margin-top: 30px;
   .stat-card:nth-child(2) { border-right: 0; }
   .stat-card:nth-child(-n+2) { border-bottom: 1px solid var(--border); }
   section { padding: 17px 16px 7px; }
+  section, #overview { scroll-margin-top: 180px; }
   .scope-grid { grid-template-columns: 1fr; }
   .return-nav { right: 12px; bottom: 12px; }
+  .appendix thead th { position: static; }
   table { display: block; overflow-x: auto; white-space: nowrap; }
   td { white-space: normal; }
 }
 @media print {
   body { background: #fff; padding: 0; }
+  .report-layout { display: block; }
   .topnav { display: none; }
   section { border: none; page-break-inside: avoid; }
 }
@@ -1156,7 +1159,7 @@ def build_report(paper_path, entries, citations, results, corr, dups,
          "通过学术数据库核对每一条参考文献。"),
         ("书目信息是否准确", scope_status(n_mm),
          "核对作者、年份、期刊、卷期页码和 DOI。"),
-        ("正文与文献列表是否对应", scope_status(n_corr_cited + n_corr_listed),
+        ("正文与文献列表是否对应", scope_status(n_corr_cited + n_corr_listed, "info"),
          "查找正文漏列、列表未引和错配引用。"),
         ("是否有重复条目", scope_status(len(dups)),
          "按 DOI、标题等信息识别重复参考文献。"),
