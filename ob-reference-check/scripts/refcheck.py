@@ -939,6 +939,7 @@ footer { text-align: center; color: #7d8884; font-size: 12px; margin-top: 30px;
   body { background: #fff; padding: 0; }
   .report-layout { display: block; }
   .topnav { display: none; }
+  .return-nav { display: none; }
   section { border: none; page-break-inside: avoid; }
 }
 """

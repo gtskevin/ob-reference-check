@@ -61,6 +61,7 @@ class ReportUiTest(unittest.TestCase):
         self.assertIn('section, #overview { scroll-margin-top: 180px; }', report)
         self.assertIn('@media print {\n  body { background: #fff; padding: 0; }\n  .report-layout { display: block; }',
                       report)
+        self.assertIn('  .return-nav { display: none; }', report)
         self.assertIn('可继续由 AI 审读', report)
         self.assertEqual(report.count('可继续由 AI 审读。'), 2)
         self.assertIn('继续审读引用恰当性和格式一致性。', report)
