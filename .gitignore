@@ -7,3 +7,6 @@ ob-reference-check-workspace/
 .agents/
 skills-lock.json
 .DS_Store
+
+# hook-generated HTML renders of docs/*.md
+docs/*.html
