@@ -2,7 +2,7 @@
  "paper": {
   "path": "/Users/huangmingpeng/AIProjects/reference_check/tests/fixtures/test_paper.md",
   "report": "/Users/huangmingpeng/AIProjects/reference_check/tests/fixtures/test_paper_refcheck_20260828.html",
-  "checked_at": "2026-08-28T06:31:46.527372"
+  "checked_at": "2026-08-28T08:22:38.306991"
  },
  "entries": [
   {
@@ -340,301 +340,104 @@
  ],
  "verification": {
   "R1": {
-   "status": "found",
-   "confidence": "high",
-   "source": "crossref",
-   "record": {
-    "_source": "crossref",
-    "title": "Job demands–resources theory: Taking stock and looking forward.",
-    "year": 2017,
-    "authors": [
-     "Bakker",
-     "Demerouti"
-    ],
-    "venue": "Journal of Occupational Health Psychology",
-    "volume": "22",
-    "issue": "3",
-    "pages": "273-285",
-    "doi": "10.1037/ocp0000056",
-    "type": "journal-article",
-    "similarity": 0.976,
-    "abstract": null
-   },
-   "mismatches": [],
-   "links": {
-    "doi": "https://doi.org/10.1037/ocp0000056",
-    "openalex_search": "https://openalex.org/works?search=Job%20demands%E2%80%93resources%20theory%3A%20Taking%20stock%20and%20looking%20forward."
-   },
-   "abstract": null
-  },
-  "R2": {
-   "status": "not_found",
-   "confidence": "high",
-   "source": "openalex+crossref",
+   "status": "unverified",
+   "confidence": "none",
+   "source": null,
    "record": null,
    "mismatches": [],
-   "links": {
-    "openalex_search": "https://openalex.org/works?search=A%20comprehensive%20review%20of%20artificial%20intelligence%20in%20the%20workplace",
-    "google_scholar": "https://scholar.google.com/scholar?q=A%20comprehensive%20review%20of%20artificial%20intelligence%20in%20the%20workplace"
-   },
+   "links": [],
    "abstract": null,
-   "note": "两个数据库均无匹配"
+   "note": "离线模式且无缓存"
+  },
+  "R2": {
+   "status": "unverified",
+   "confidence": "none",
+   "source": null,
+   "record": null,
+   "mismatches": [],
+   "links": [],
+   "abstract": null,
+   "note": "离线模式且无缓存"
   },
   "R3": {
-   "status": "found",
-   "confidence": "high",
-   "source": "crossref",
-   "record": {
-    "_source": "crossref",
-    "title": "The role of trust in automation reliance",
-    "year": 2003,
-    "authors": [
-     "Dzindolet",
-     "Peterson",
-     "Pomranky",
-     "Pierce",
-     "Beck"
-    ],
-    "venue": "International Journal of Human-Computer Studies",
-    "volume": "58",
-    "issue": "6",
-    "pages": "697-718",
-    "doi": "10.1016/s1071-5819(03)00038-7",
-    "type": "journal-article",
-    "similarity": 1.0,
-    "abstract": null
-   },
+   "status": "unverified",
+   "confidence": "none",
+   "source": null,
+   "record": null,
    "mismatches": [],
-   "links": {
-    "doi": "https://doi.org/10.1016/s1071-5819(03)00038-7",
-    "openalex_search": "https://openalex.org/works?search=The%20role%20of%20trust%20in%20automation%20reliance"
-   },
-   "abstract": null
+   "links": [],
+   "abstract": null,
+   "note": "离线模式且无缓存"
   },
   "R4": {
-   "status": "found",
-   "confidence": "high",
-   "source": "crossref",
-   "record": {
-    "_source": "crossref",
-    "title": "In AI We Trust Incrementally: a Multi-layer Model of Trust to Analyze Human-Artificial Intelligence Interactions",
-    "year": 2020,
-    "authors": [
-     "Ferrario",
-     "Loi",
-     "Viganò"
-    ],
-    "venue": "Philosophy &amp; Technology",
-    "volume": "33",
-    "issue": "3",
-    "pages": "523-539",
-    "doi": "10.1007/s13347-019-00378-3",
-    "type": "journal-article",
-    "similarity": 1.0,
-    "abstract": "Abstract\n                  \n                    Real engines of the artificial intelligence (AI) revolution, machine learning (ML) models, and algorithms are embedded nowadays in many services and products around us. As a society, we argue it is now necessary to transition into a\n                    phronetic\n                    paradigm focused on the ethical dilemmas stemming from the conception and application of AIs to define actionable recommendations as well as normative solutions. However, both academic research and society-driven initiatives are still quite far from clearly defining a solid program of study and intervention. In this contribution, we will focus on selected ethical investigations around AI by proposing an incremental model of trust that can be applied to both human-human and human-AI interactions. Starting with a quick overview of the existing accounts of trust, with special attention to Taddeo’s concept of “e-trust,” we will discuss all the components of the proposed model and the reasons to trust in human-AI interactions in an example of relevance for business organizations. We end this contribution with an analysis of the epistemic and pragmatic reasons of trust in human-AI interactions and with a discussion of kinds of normativity in trustworthiness of AIs."
-   },
+   "status": "unverified",
+   "confidence": "none",
+   "source": null,
+   "record": null,
    "mismatches": [],
-   "links": {
-    "doi": "https://doi.org/10.1007/s13347-019-00378-3",
-    "openalex_search": "https://openalex.org/works?search=In%20AI%20We%20Trust%20Incrementally%3A%20a%20Multi-layer%20Model%20of%20Trust%20to%20Analyze%20Human-Artificial%20Intelligence%20Interactions"
-   },
-   "abstract": "Abstract\n                  \n                    Real engines of the artificial intelligence (AI) revolution, machine learning (ML) models, and algorithms are embedded nowadays in many services and products around us. As a society, we argue it is now necessary to transition into a\n                    phronetic\n                    paradigm focused on the ethical dilemmas stemming from the conception and application of AIs to define actionable recommendations as well as normative solutions. However, both academic research and society-driven initiatives are still quite far from clearly defining a solid program of study and intervention. In this contribution, we will focus on selected ethical investigations around AI by proposing an incremental model of trust that can be applied to both human-human and human-AI interactions. Starting with a quick overview of the existing accounts of trust, with special attention to Taddeo’s concept of “e-trust,” we will discuss all the components of the proposed model and the reasons to trust in human-AI interactions in an example of relevance for business organizations. We end this contribution with an analysis of the epistemic and pragmatic reasons of trust in human-AI interactions and with a discussion of kinds of normativity in trustworthiness of AIs."
+   "links": [],
+   "abstract": null,
+   "note": "离线模式且无缓存"
   },
   "R5": {
-   "status": "found",
-   "confidence": "high",
-   "source": "crossref",
-   "record": {
-    "_source": "crossref",
-    "title": "Conservation of resources: A new attempt at conceptualizing stress.",
-    "year": 1989,
-    "authors": [
-     "Hobfoll"
-    ],
-    "venue": "American Psychologist",
-    "volume": "44",
-    "issue": "3",
-    "pages": "513-524",
-    "doi": "10.1037/0003-066x.44.3.513",
-    "type": "journal-article",
-    "similarity": 0.992,
-    "abstract": null
-   },
+   "status": "unverified",
+   "confidence": "none",
+   "source": null,
+   "record": null,
    "mismatches": [],
-   "links": {
-    "doi": "https://doi.org/10.1037/0003-066x.44.3.513",
-    "openalex_search": "https://openalex.org/works?search=Conservation%20of%20resources%3A%20A%20new%20attempt%20at%20conceptualizing%20stress."
-   },
-   "abstract": null
+   "links": [],
+   "abstract": null,
+   "note": "离线模式且无缓存"
   },
   "R6": {
-   "status": "found",
-   "confidence": "high",
-   "source": "crossref",
-   "record": {
-    "_source": "crossref",
-    "title": "Trust in Automation: Designing for Appropriate Reliance",
-    "year": 2004,
-    "authors": [
-     "Lee",
-     "See"
-    ],
-    "venue": "Human Factors: The Journal of the Human Factors and Ergonomics Society",
-    "volume": "46",
-    "issue": "1",
-    "pages": "50-80",
-    "doi": "10.1518/hfes.46.1.50.30392",
-    "type": "journal-article",
-    "similarity": 1.0,
-    "abstract": null
-   },
+   "status": "unverified",
+   "confidence": "none",
+   "source": null,
+   "record": null,
    "mismatches": [],
-   "links": {
-    "doi": "https://doi.org/10.1518/hfes.46.1.50.30392",
-    "openalex_search": "https://openalex.org/works?search=Trust%20in%20Automation%3A%20Designing%20for%20Appropriate%20Reliance"
-   },
-   "abstract": null
+   "links": [],
+   "abstract": null,
+   "note": "离线模式且无缓存"
   },
   "R7": {
-   "status": "found",
-   "confidence": "high",
-   "source": "crossref",
-   "record": {
-    "_source": "crossref",
-    "title": "The effect of the performance appraisal system on trust for management: A field quasi-experiment.",
-    "year": 1999,
-    "authors": [
-     "Mayer",
-     "Davis"
-    ],
-    "venue": "Journal of Applied Psychology",
-    "volume": "84",
-    "issue": "1",
-    "pages": "123-136",
-    "doi": "10.1037/0021-9010.84.1.123",
-    "type": "journal-article",
-    "similarity": 0.995,
-    "abstract": null
-   },
+   "status": "unverified",
+   "confidence": "none",
+   "source": null,
+   "record": null,
    "mismatches": [],
-   "links": {
-    "doi": "https://doi.org/10.1037/0021-9010.84.1.123",
-    "openalex_search": "https://openalex.org/works?search=The%20effect%20of%20the%20performance%20appraisal%20system%20on%20trust%20for%20management%3A%20A%20field%20quasi-experiment."
-   },
-   "abstract": null
+   "links": [],
+   "abstract": null,
+   "note": "离线模式且无缓存"
   },
   "R8": {
-   "status": "found",
-   "confidence": "medium",
-   "source": "openalex",
-   "record": {
-    "_source": "openalex",
-    "id": "https://openalex.org/W2142175015",
-    "title": "An Integrative Model Of Organizational Trust",
-    "year": 1995,
-    "authors": [
-     "Roger C. Mayer",
-     "James H. Davis",
-     "F. David Schoorman"
-    ],
-    "venue": "Academy of Management Review",
-    "volume": "20",
-    "issue": "3",
-    "pages": "709-734",
-    "doi": "10.5465/amr.1995.9508080335",
-    "type": "article",
-    "similarity": 1.0,
-    "abstract": "Scholars in various disciplines have considered the causes, nature, and effects of trust. Prior approaches to studying trust are considered, including characteristics of the trustor, the trustee, and the role of risk. A definition of trust and a model of its antecedents and outcomes are presented, which integrate research from multiple disciplines and differentiate trust from similar constructs. Several research propositions based on the model are presented."
-   },
-   "mismatches": [
-    {
-     "field": "pages",
-     "paper": "709-712",
-     "database": "709-734"
-    }
-   ],
-   "links": {
-    "doi": "https://doi.org/10.5465/amr.1995.9508080335",
-    "openalex": "https://openalex.org/W2142175015"
-   },
-   "abstract": "Scholars in various disciplines have considered the causes, nature, and effects of trust. Prior approaches to studying trust are considered, including characteristics of the trustor, the trustee, and the role of risk. A definition of trust and a model of its antecedents and outcomes are presented, which integrate research from multiple disciplines and differentiate trust from similar constructs. Several research propositions based on the model are presented."
+   "status": "unverified",
+   "confidence": "none",
+   "source": null,
+   "record": null,
+   "mismatches": [],
+   "links": [],
+   "abstract": null,
+   "note": "离线模式且无缓存"
   },
   "R9": {
-   "status": "found",
-   "confidence": "high",
-   "source": "crossref",
-   "record": {
-    "_source": "crossref",
-    "title": "Humans and Automation: Use, Misuse, Disuse, Abuse",
-    "year": 1997,
-    "authors": [
-     "Parasuraman",
-     "Riley"
-    ],
-    "venue": "Human Factors: The Journal of the Human Factors and Ergonomics Society",
-    "volume": "39",
-    "issue": "2",
-    "pages": "230-253",
-    "doi": "10.1518/001872097778543886",
-    "type": "journal-article",
-    "similarity": 1.0,
-    "abstract": "This paper addresses theoretical, empirical, and analytical studies pertaining to human use, misuse, disuse, and abuse of automation technology. Use refers to the voluntary activation or disengagement of automation by human operators. Trust, mental workload, and risk can influence automation use, but interactions between factors and large individual differences make prediction of automation use difficult. Misuse refers to over reliance on automation, which can result in failures of monitoring or decision biases. Factors affecting the monitoring of automation include workload, automation reliability and consistency, and the saliency of automation state indicators. Disuse, or the neglect or underutilization of automation, is commonly caused by alarms that activate falsely. This often occurs because the base rate of the condition to be detected is not considered in setting the trade-off between false alarms and omissions. Automation abuse, or the automation of functions by designers and implementation by managers without due regard for the consequences for human performance, tends to define the operator's roles as by-products of the automation. Automation abuse can also promote misuse and disuse of automation by human operators. Understanding the factors associated with each of these aspects of human use of automation can lead to improved system design, effective training methods, and judicious policies and procedures involving automation use."
-   },
+   "status": "unverified",
+   "confidence": "none",
+   "source": null,
+   "record": null,
    "mismatches": [],
-   "links": {
-    "doi": "https://doi.org/10.1518/001872097778543886",
-    "openalex_search": "https://openalex.org/works?search=Humans%20and%20Automation%3A%20Use%2C%20Misuse%2C%20Disuse%2C%20Abuse"
-   },
-   "abstract": "This paper addresses theoretical, empirical, and analytical studies pertaining to human use, misuse, disuse, and abuse of automation technology. Use refers to the voluntary activation or disengagement of automation by human operators. Trust, mental workload, and risk can influence automation use, but interactions between factors and large individual differences make prediction of automation use difficult. Misuse refers to over reliance on automation, which can result in failures of monitoring or decision biases. Factors affecting the monitoring of automation include workload, automation reliability and consistency, and the saliency of automation state indicators. Disuse, or the neglect or underutilization of automation, is commonly caused by alarms that activate falsely. This often occurs because the base rate of the condition to be detected is not considered in setting the trade-off between false alarms and omissions. Automation abuse, or the automation of functions by designers and implementation by managers without due regard for the consequences for human performance, tends to define the operator's roles as by-products of the automation. Automation abuse can also promote misuse and disuse of automation by human operators. Understanding the factors associated with each of these aspects of human use of automation can lead to improved system design, effective training methods, and judicious policies and procedures involving automation use."
+   "links": [],
+   "abstract": null,
+   "note": "离线模式且无缓存"
   },
   "R10": {
-   "status": "found",
-   "confidence": "high",
-   "source": "crossref",
-   "record": {
-    "_source": "crossref",
-    "title": "Machine behaviour",
-    "year": 2019,
-    "authors": [
-     "Rahwan",
-     "Cebrian",
-     "Obradovich",
-     "Bongard",
-     "Bonnefon",
-     "Breazeal",
-     "Crandall",
-     "Christakis",
-     "Couzin",
-     "Jackson",
-     "Jennings",
-     "Kamar",
-     "Kloumann",
-     "Larochelle",
-     "Lazer",
-     "McElreath",
-     "Mislove",
-     "Parkes",
-     "Pentland",
-     "Roberts",
-     "Shariff",
-     "Tenenbaum",
-     "Wellman"
-    ],
-    "venue": "Nature",
-    "volume": "568",
-    "issue": "7753",
-    "pages": "477-486",
-    "doi": "10.1038/s41586-019-1138-y",
-    "type": "journal-article",
-    "similarity": 1.0,
-    "abstract": null
-   },
+   "status": "unverified",
+   "confidence": "none",
+   "source": null,
+   "record": null,
    "mismatches": [],
-   "links": {
-    "doi": "https://doi.org/10.1038/s41586-019-1138-y",
-    "openalex_search": "https://openalex.org/works?search=Machine%20behaviour"
-   },
-   "abstract": null
+   "links": [],
+   "abstract": null,
+   "note": "离线模式且无缓存"
   }
  },
  "correspondence": {
@@ -670,6 +473,11 @@
    "api_crossref": 0,
    "api_s2": 0,
    "failed": 0
+  },
+  "source_capabilities": {
+   "openalex": "key",
+   "crossref": "public",
+   "semantic_scholar": "key"
   }
  }
 }

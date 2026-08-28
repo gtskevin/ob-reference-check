@@ -4,22 +4,31 @@ ob-reference-check — 论文参考文献系统检查（机械层）
 
 用法:
     python refcheck.py <论文文件 .docx/.pdf/.md> [选项]
+    python refcheck.py --verify-doi R7,R16 <论文文件或 *_refcheck_*.json>
+    python refcheck.py --finalize <论文文件或 *_refcheck_*.json> [--final xx.json]
 
 做什么（脚本层，零 LLM token）:
     1. 解析 Word / PDF / Markdown 三种格式
     2. 提取参考文献列表条目 + 正文引用标记
     3. OpenAlex / Crossref / Semantic Scholar 检索初筛 + 元数据比对（带全局缓存）
+       检索全部失败时若条目带 DOI，用 Crossref DOI 直查兜底
     4. 机械检查: 双向对应 / 重复条目 / 时间线异常 / preprint 版本
+       + 列表内交叉检测（DOI 互换错挂 / 同作者排序 / 标题残留编号）
     5. A/B/C 分诊初筛（承重引用 / 顺带提及 / 引用堆砌）
     6. 生成自包含 HTML 初筛底稿（默认不打开）+ .json 数据文件（供人工复核）
+    7. --verify-doi: 批量 DOI 直查（替代人工逐条检索）
+    8. --finalize: 读 Claude 复核结论 final.json，数据驱动渲染最终报告
+       （复核结论按 DOI 持久化，下次运行自动回流为 prior_verdict）
 
 不做什么:
     - 引用恰当性判断（层 3）→ 由 Claude 读 .json 中的句子+摘要完成
     - 引用格式一致性审查 → 由 Claude 完成
+    - final.json 的结论本身 → 由 Claude 复核后产出，脚本只校验+渲染
 """
 
 import argparse
 import datetime
+import glob
 import difflib
 import hashlib
 import html as html_mod
@@ -204,32 +213,60 @@ def parse_entry(raw, idx):
     e["authors"] = [a.strip() for a in re.split(r",|&|;| and ", authors_str)
                     if re.search(r"[A-ZÀ-Ÿ][a-zà-ÿ]{1,}", a.strip())]
 
-    # 标题: 年份括号之后到下一个句号分句
+    # 标题/书目边界: 先剥 URL（R52 教训），再在最左侧找卷期页模式，然后
+    # 回溯到它之前最后一个句末终止符（.?!）。
+    # 问号既可能是标题结尾（其后是期刊名，R16: "...open? Academy of
+    # Management Journal, 50(4)..."），也可能是标题内部设问（其后还有
+    # 副标题，R37: "Who gets credit for input? Demographic and structural
+    # status..."）——以卷期模式的位置为准，不能以第一个终止符为准。
     rest = raw[ym.end():] if ym else raw[min(len(authors_str), len(raw)):]
     rest = rest.lstrip("). ").strip()
-    # Require the next word after a period to start with a capital letter;
-    # this keeps title abbreviations such as "vs." inside the title.
-    title_m = re.match(r"^(.*?)(?:\.(?:\s+(?=[A-ZÀ-Ÿ])|$))", rest)
-    e["title"] = (title_m.group(1).strip() if title_m else rest.split(".")[0]).strip()
-    if len(e["title"]) < 8:
-        e["title"] = rest[:120]
-        e["parse_ok"] = False  # 标题解析可疑，让 Claude 兜底
+    rest_nourl = re.sub(r"https?://\S*", " ", rest)
 
-    # 期刊/卷/期/页: 标题之后的剩余部分
-    tail = rest[len(e["title"]):].lstrip(". ")
-    vm = re.search(r"[, ](\d+)\s*\((\d+)\)", tail)
+    vm = None
+    for pat in (r"[, ]\d+\s*\(\d+\)",      # 50(4)
+                r"[, ]\d+\s*,\s*\d+\s*[-–—]",  # 28, 285-305（无期号）
+                r"[, ]\d+\s*:"):            # 28: 1-15
+        m = re.search(pat, rest_nourl)
+        if m and (vm is None or m.start() < vm.start()):
+            vm = m
+
     if vm:
-        e["volume"], e["issue"] = vm.group(1), vm.group(2)
-        e["venue"] = tail[:vm.start()].strip(" ,.")
-    else:
-        vm2 = re.search(r"[, ](\d+):", tail)
-        if vm2:
-            e["volume"] = vm2.group(1)
-            e["venue"] = tail[:vm2.start()].strip(" ,.")
+        before = rest_nourl[:vm.start()].rstrip()
+        terms = list(re.finditer(r"[.?!](?=\s+[A-ZÀ-Ÿ])|[.?!]$", before))
+        if terms:
+            t = terms[-1]
+            term_char = t.group(0)[0]  # 问句式标题保留结尾的 "?"（APA 习惯）
+            e["title"] = before[:t.start()].strip() + (
+                term_char if term_char in "?!" else "")
+            venue_part = before[t.end():]
         else:
-            v = DOI_RE.sub("", tail).strip(" ,.")
-            e["venue"] = v if 0 < len(v) < 120 else None
-    pm = re.search(r"(\d+\s*[-–—]\s*\d+)", tail)
+            e["title"] = before.strip(" ,.")
+            venue_part = ""
+        bib = rest_nourl[vm.start():]
+        mv = re.match(r"[, ](\d+)\s*\((\d+)\)", bib)
+        if mv:
+            e["volume"], e["issue"] = mv.group(1), mv.group(2)
+        else:
+            mv2 = re.match(r"[, ](\d+)\s*[,:]", bib)
+            if mv2:
+                e["volume"] = mv2.group(1)
+        e["venue"] = venue_part.strip(" ,.") or None
+    else:
+        # 无卷期页模式（书籍、章节等）: 标题到第一个句末终止符
+        title_m = re.match(r"^(.*?)(?:[.?!](?:\s+(?=[A-ZÀ-Ÿ])|$))",
+                           rest_nourl)
+        e["title"] = (title_m.group(1).strip() if title_m
+                      else rest_nourl.split(".")[0]).strip()
+        if title_m and title_m.group(0)[-1:] in ("?", "!"):
+            e["title"] += title_m.group(0)[-1]
+        venue_part = rest_nourl[len(e["title"]):]
+        v = DOI_RE.sub("", venue_part).strip(" ,.?! ")
+        e["venue"] = v if 0 < len(v) < 120 else None
+    if len(e["title"]) < 8:
+        e["title"] = rest_nourl[:120]
+        e["parse_ok"] = False  # 标题解析可疑，让 Claude 兜底
+    pm = re.search(r"(\d+\s*[-–—]\s*\d+)", rest_nourl)
     if pm:
         e["pages"] = re.sub(r"\s*", "", pm.group(1)).replace("–", "-").replace("—", "-")
 
@@ -275,6 +312,12 @@ def extract_citations(body_paragraphs):
                 parts = CITE_SPLIT.split(inner)
                 for part in parts:
                     part = part.strip()
+                    # 直接引语的页码/章节后缀不算作者或年份:
+                    # (Galinsky & Moskowitz, 2000, p. 710) 曾因 "p. 710"
+                    # 后缀整体匹配失败而被误报为"正文引了但列表没有"
+                    part = re.sub(
+                        r",?\s*(?:pp?\.|chap\.?|chapter)\s*[\w.\-–\s]*$",
+                        "", part, flags=re.IGNORECASE)
                     im = INNER_CITE.match(part)
                     if not im:
                         continue
@@ -380,6 +423,8 @@ class Verifier:
                     return json.loads(resp.read().decode("utf-8"))
             except urllib.error.HTTPError as ex:
                 last_err = ex
+                if ex.code == 404:
+                    raise  # 资源确定不存在，重试无意义（DOI 直查未知 DOI 时常见）
                 if ex.code in (429, 403):
                     time.sleep(3)  # 限流: 短退避即可，熔断逻辑会止损
                 else:
@@ -416,7 +461,8 @@ class Verifier:
         title = entry.get("title") or ""
         # Bump the cache namespace when parsing rules change; otherwise a
         # corrected author/DOI/title parse could keep stale mismatches.
-        key = "v3:" + re.sub(r"\W+", " ", title.lower()).strip()[:200]
+        # v4: 标题定界认 ?/!、tail 剥 URL、无期号卷号模式、venue 词级比对
+        key = "v5:" + re.sub(r"\W+", " ", title.lower()).strip()[:200]
         cached = self._cache_get(key)
         if cached and self.offline:
             return cached["data"]
@@ -449,6 +495,28 @@ class Verifier:
             rec = s(title, entry)
             if rec is not None:
                 break
+        if rec is None:
+            # DOI 直查兜底（C6①）: 检索噪音/解析问题不应把带有效 DOI 的条目
+            # 判为未匹配。若 DOI 查到的标题与论文标题对不上，说明 DOI 指向
+            # 另一篇文献（疑似错挂），保留 not_found 但附明确线索。
+            if entry.get("doi"):
+                rec = self._crossref_doi_lookup(entry["doi"])
+                if rec is not None:
+                    t = (rec.get("title") or "").lower()
+                    tl = title.lower()
+                    # 数据库标题常是短版（无副标题）或长版（含副标题），
+                    # 纯比例打分会把同一篇文献判成两篇（R7 教训:
+                    # "Looking Out From the Top" vs 全标题 ratio≈0.45）。
+                    # 比例 + 双向 containment 任一命中即视为同一篇。
+                    same = (difflib.SequenceMatcher(None, tl, t).ratio() >= 0.6
+                            or t in tl or tl in t)
+                    if not same:
+                        return {"status": "not_found", "confidence": "low",
+                                "source": "crossref-doi", "record": rec,
+                                "mismatches": [], "links": self._search_links(entry),
+                                "abstract": None,
+                                "note": "论文所写 DOI 指向另一篇文献（标题不符），"
+                                        "疑似 DOI 错挂；必须人工复核"}
         if rec is None:
             # 公共索引的覆盖、检索限流和条目解析都会造成漏检；自动未匹配不是
             # “文献不存在”的证据，必须由 Skill 层二次复核后才能形成最终结论。
@@ -564,6 +632,37 @@ class Verifier:
         }
         return rec
 
+    def _crossref_doi_lookup(self, doi):
+        """Crossref DOI 直查（C6①: title 检索失败时的兜底，比检索式可靠）。"""
+        if self._crossref_dead:
+            return None
+        url = f"https://api.crossref.org/works/{urllib.parse.quote(doi)}"
+        try:
+            self.stats["api_crossref"] += 1
+            data = self._get(url)
+        except Exception:
+            self.stats["failed"] += 1
+            return None
+        item = data.get("message") or {}
+        t = (item.get("title") or [""])[0]
+        if not t:
+            return None
+        cr = item.get("container-title") or [""]
+        return {
+            "_source": "crossref-doi",
+            "title": t,
+            "year": _crossref_year(item),
+            "authors": [a.get("family", "") for a in item.get("author", [])],
+            "venue": cr[0] if cr else "",
+            "volume": item.get("volume") or None,
+            "issue": item.get("issue") or None,
+            "pages": item.get("page") or None,
+            "doi": item.get("DOI"),
+            "type": item.get("type"),
+            "similarity": 1.0,
+            "abstract": _strip_html(item.get("abstract") or ""),
+        }
+
     def _search_s2(self, title, entry):
         """Semantic Scholar（需要 API key；免费池太容易被限流，无 key 不启用）。"""
         if not self.s2_key or self._s2_dead:
@@ -665,8 +764,48 @@ PREPRINT_MARKERS = re.compile(
     r"arxiv|psyarxiv|biorxiv|medrxiv|ssrn|osf\.io|preprint", re.IGNORECASE)
 
 
+VENUE_STOPWORDS = {"the", "of", "and", "for", "in", "a", "an", "on"}
+
+
+def _venue_words(v):
+    v = re.sub(r"[^a-z0-9]+", " ", v.lower())
+    return [w for w in v.split() if w not in VENUE_STOPWORDS]
+
+
+def _abbr_word(short, long):
+    """short 是 long 的缩写（首字母/截断前缀）吗？单复数屈折不算缩写。"""
+    if short == long:
+        return True
+    if not short or not long.startswith(short):
+        return False
+    if long in (short + "s", short + "es"):
+        # review → reviews 属拼写出入而非缩写（R52 教训），不静默放行
+        return False
+    return True
+
+
+def _venue_equivalent(paper, db):
+    """期刊名词级等价判断: 全词相等，或一侧是另一侧的逐词缩写前缀。"""
+    wp, wd = _venue_words(paper), _venue_words(db)
+    if not wp or not wd:
+        return False
+    if wp == wd:
+        return True
+    short, long_ = (wp, wd) if len(wp) <= len(wd) else (wd, wp)
+    i = 0
+    for w in long_:
+        if i < len(short) and _abbr_word(short[i], w):
+            i += 1
+    return i == len(short)
+
+
 def _compare_metadata(entry, rec):
-    """逐项比对，返回 mismatch 列表 [{field, paper, database}]"""
+    """逐项比对，返回 mismatch 列表 [{field, paper, database, level?}]
+
+    level 含义: 无 level = 明显差异; "near" = 高度相似（疑似缩写变体或
+    单字符拼写出入）——统一交给 AI 层裁决，不做静默容差（F2 教训:
+    容差规则在代码里替用户做语义判断，会吞掉真错误）。
+    """
     out = []
 
     def add(field, paper_val, db_val, threshold=0.75):
@@ -684,6 +823,22 @@ def _compare_metadata(entry, rec):
                 out.append({"field": field, "paper": p, "database": d})
             return
         pl, dl = str(p).lower(), str(d).lower()
+        if field == "venue":
+            if _venue_equivalent(pl, dl):
+                return
+            sim = difflib.SequenceMatcher(None, pl, dl).ratio()
+            mm = {"field": field, "paper": p, "database": d}
+            if sim < threshold:
+                out.append(mm)
+            else:
+                mm["level"] = "near"
+                out.append(mm)
+            return
+        if field == "first_author":
+            # 姓氏无缩写惯例，精确匹配；"Li" ⊂ "Lin" 的子串容差会吞掉真错误
+            if pl != dl:
+                out.append({"field": field, "paper": p, "database": d})
+            return
         if pl in dl or dl in pl:
             return  # 简称/缩写容差（如 "Human Factors" ⊂ 数据库全称）
         sim = difflib.SequenceMatcher(None, pl, dl).ratio()
@@ -783,6 +938,77 @@ def check_preprint(entries):
         if PREPRINT_MARKERS.search(venue):
             issues.append({"id": e["id"],
                            "issue": f"引用的是 preprint（{venue}）——正式版可能已发表，建议更新"})
+    return issues
+
+
+def check_doi_swaps(entries, results):
+    """列表内 DOI 错挂/互换检测（C1, R55/R56 教训）。
+
+    逐条比对发现不了"A 的 DOI 指向 B、B 的 DOI 指向 A"这类列表内部
+    一致性错误——单条各自与数据库比对只会显示为普通 DOI 差异。
+    """
+    paper_doi, db_doi = {}, {}
+    for e in entries:
+        paper_doi[e["id"]] = (e.get("doi") or "").lower().rstrip(".")
+        rec = (results.get(e["id"], {}) or {}).get("record") or {}
+        db_doi[e["id"]] = (rec.get("doi") or "").lower().rstrip(".")
+    by_db = {v: k for k, v in db_doi.items() if v}
+    issues, seen = [], set()
+    for a, pdoi in paper_doi.items():
+        if not pdoi or pdoi == db_doi.get(a):
+            continue
+        b = by_db.get(pdoi)
+        if not b or b == a:
+            continue
+        key = tuple(sorted((a, b)))
+        if key in seen:
+            continue
+        seen.add(key)
+        if paper_doi.get(b) and paper_doi.get(b) == db_doi.get(a):
+            issues.append({"ids": [a, b], "level": "warn",
+                           "issue": f"疑似 DOI 互换错挂：{a} 所写 DOI 实为 {b} "
+                                    f"的文献，{b} 所写 DOI 实为 {a} 的文献"})
+        else:
+            issues.append({"ids": [a, b], "level": "warn",
+                           "issue": f"疑似 DOI 错挂：{a} 所写 DOI 实为 {b} 的文献"})
+    return issues
+
+
+def check_ordering(entries):
+    """排序一致性检查（C3, R55/R56 教训）。
+
+    APA 规则: 完整作者名单相同的多条才按年份升序；同第一作者但合作者
+    不同的按第二作者字母序——后者不做机械判断（易误报），只查前者。
+    """
+    issues, groups = {}, {}
+    for e in entries:
+        if not e.get("authors") or e.get("year") is None:
+            continue
+        key = tuple(re.sub(r"\W+", "", a.split()[-1].lower())
+                    for a in e["authors"])
+        groups.setdefault(key, []).append(e)
+    for items in groups.values():
+        if len(items) < 2:
+            continue
+        years = [i["year"] for i in items]
+        if years != sorted(years):
+            seq = " → ".join(f"{i['id']}({i['year']})" for i in items)
+            issues_key = items[0]["authors"][0]
+            issues[issues_key] = {
+                "ids": [i["id"] for i in items], "level": "info",
+                "issue": f"同一作者组（{', '.join(items[0]['authors'])}）的多条文献"
+                         f"未按年份升序排列: {seq}"}
+    return list(issues.values())
+
+
+def check_title_artifacts(entries):
+    """标题以「数字+空格」开头 → 疑似章节号残留（C4, R49 教训）。"""
+    issues = []
+    for e in entries:
+        if e.get("title") and re.match(r"^\d{1,3}\s+\S", e["title"]):
+            issues.append({"id": e["id"], "level": "info",
+                           "issue": f"标题以数字开头（{e['title'][:30]}…），"
+                                    f"疑似章节号残留，建议核对"})
     return issues
 
 # ---------------------------------------------------------------------------
@@ -1022,7 +1248,7 @@ def _entry_by_id(entries, eid):
 
 
 def build_report(paper_path, entries, citations, results, corr, dups,
-                 timeline, preprints, verifier_stats):
+                 timeline, preprints, verifier_stats, cross=None):
     today = datetime.date.today().isoformat()
     stem = os.path.splitext(os.path.basename(paper_path))[0]
     # Report fields can legitimately be absent (for example, a database
@@ -1107,6 +1333,22 @@ def build_report(paper_path, entries, citations, results, corr, dups,
         sections.append(("sec-misc", "⧉ 重复条目 / ⏰ 时间线 / 📄 preprint", "重复/时间线",
                          n_misc, "hot-warn", "".join(misc_rows)))
 
+    # 列表内部一致性（交叉检测: 逐条比对发现不了的互换/排序/残留问题）
+    cross = cross or {}
+    list_rows = []
+    for s in cross.get("doi_swaps", []):
+        list_rows.append(f'<div class="item warn"><p>{_badge("错挂", "warn")} '
+                         f'{esc(s["issue"])}</p></div>')
+    for s in cross.get("ordering", []):
+        list_rows.append(f'<div class="item info"><p>{_badge("排序", "info")} '
+                         f'{esc(s["issue"])}</p></div>')
+    for s in cross.get("title_artifacts", []):
+        list_rows.append(f'<div class="item info"><p>{_badge(s["id"], "info")} '
+                         f'{esc(s["issue"])}</p></div>')
+    if list_rows:
+        sections.append(("sec-list", "⚠️ 列表内部一致性", "列表一致性",
+                         len(list_rows), "hot-warn", "".join(list_rows)))
+
     # 需要语义判断的项目：提供明确的后续审读入口。
     sections.append(("sec-appro", "进一步审读：引用是否支撑论述", "论述支撑", None, "",
                      '<div class="todo"><strong>可继续由 AI 审读。</strong><br>'
@@ -1156,8 +1398,10 @@ def build_report(paper_path, entries, citations, results, corr, dups,
 <p>本页是自动初筛底稿；所有异常项须人工复核后才可形成最终结论。</p></div>
 <div class="summary-grid">""")
 
+    n_list_issues = (len(cross.get("doi_swaps", [])) + len(cross.get("ordering", []))
+                     + len(cross.get("title_artifacts", [])))
     n_ok = n_found - n_mm
-    n_other = n_unver + n_corr_cited + n_corr_listed + n_misc
+    n_other = n_unver + n_corr_cited + n_corr_listed + n_misc + n_list_issues
 
     def highest_severity(bad=0, warn=0, info=0):
         if bad:
@@ -1263,6 +1507,334 @@ def build_report(paper_path, entries, citations, results, corr, dups,
     return "\n".join(H)
 
 
+# ---------------------------------------------------------------------------
+# 6b. 定稿机制（P0-1）: Claude 复核结论 final.json → 脚本重渲染最终报告
+#
+# 废除「Claude 手改 HTML」：本次交付 bug（16 行徽章改 class 没换 emoji）的
+# 根源是五处状态（概览卡片/nav 计数/各节状态/附录徽章/说明文字）靠人肉
+# regex 同步。改为单一数据源（final.json）驱动，模板保证一致性。
+# ---------------------------------------------------------------------------
+
+VERDICT_STORE = os.path.expanduser("~/.reference_check/verdicts.json")
+FINAL_ICON = {"ok": "✅", "warn": "⚠️", "info": "❓"}
+
+
+def load_verdict_store():
+    try:
+        with open(VERDICT_STORE, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def save_verdict_store(store):
+    os.makedirs(os.path.dirname(VERDICT_STORE), exist_ok=True)
+    tmp = VERDICT_STORE + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(store, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, VERDICT_STORE)
+
+
+def _validate_verdicts(entries, verification, verdicts):
+    """final.json 校验（F5: warn/info 结论必须带证据，防未查库断言）。"""
+    by_id = {e["id"]: e for e in entries}
+    errors, seen = [], set()
+    for v in verdicts:
+        vid = v.get("id")
+        if vid not in by_id:
+            errors.append(f"{vid}: 不存在于文献列表")
+            continue
+        seen.add(vid)
+        if v.get("final_status") not in FINAL_ICON:
+            errors.append(f"{vid}: final_status 必须是 ok/warn/info，"
+                          f"当前 {v.get('final_status')!r}")
+        if v.get("final_status") in ("warn", "info"):
+            for k in ("verdict", "evidence", "action"):
+                if not v.get(k):
+                    errors.append(f"{vid}: {k} 为必填"
+                                  f"（warn/info 结论必须带证据与行动项）")
+    for e in entries:
+        if e["id"] in seen:
+            continue
+        r = verification.get(e["id"], {})
+        if r.get("status") in ("not_found", "unverified") or r.get("mismatches"):
+            errors.append(f"{e['id']}: 自动初筛有异常"
+                          f"（status={r.get('status')}, "
+                          f"{len(r.get('mismatches') or [])} 项差异），"
+                          f"必须有显式复核结论")
+    if errors:
+        sys.exit("[错误] final.json 校验失败:\n  - " + "\n  - ".join(errors))
+
+
+def build_final_report(data, verdicts):
+    """按复核结论渲染最终报告（P1-1~4 信息架构）。
+
+    - 概览只留行动导向卡片，无重复段落文字（P1-1）
+    - 误报降级为附录行内备注，不设过程性栏目（P1-2）
+    - 无问题条目默认折叠 <details>，仅展开问题行（P1-3）
+    - 核验范围收进 footer 一行（P1-4）
+    """
+    esc = lambda v: html_mod.escape("" if v is None else str(v))
+    entries = data["entries"]
+    results = data.get("verification", {})
+    citations = data.get("citations", [])
+    today = datetime.date.today().isoformat()
+    stem = os.path.splitext(os.path.basename(data["paper"]["path"]))[0]
+
+    vmap = {v["id"]: v for v in verdicts}
+
+    def cat(v):
+        return v.get("category", "bibliography")
+
+    must = [v for v in verdicts if v["final_status"] == "warn"
+            and cat(v) in ("bibliography", "correspondence")]
+    appro = [v for v in verdicts if cat(v) == "appropriateness"
+             and v["final_status"] != "ok"]
+    fmt = [v for v in verdicts if cat(v) == "format"
+           and v["final_status"] != "ok"]
+    check = [v for v in verdicts if v["final_status"] == "info"
+             and cat(v) in ("bibliography", "correspondence")]
+    n_problem = len(must) + len(appro) + len(fmt) + len(check)
+
+    def item_html(v, level):
+        e = _entry_by_id(entries, v["id"])
+        r = results.get(v["id"], {})
+        return f"""<div class="item {level}">
+<h3>{_badge(v['id'], level)} {esc(v.get('verdict') or '')}</h3>
+<p class="muted">{esc(e['raw'][:150])}</p>
+<p><b>建议：</b>{esc(v.get('action') or '')}</p>
+<p class="muted">依据：{esc(v.get('evidence') or '')}</p>
+<p>复核：{_links_html(_report_links(r))}</p>
+</div>"""
+
+    sections = []
+    if must:
+        sections.append(("sec-must", "必须处理", len(must),
+                         "".join(item_html(v, "warn") for v in must)))
+    if appro or check:
+        sections.append(("sec-check", "存疑 / 建议核对", len(appro) + len(check),
+                         "".join(item_html(v, "warn" if v["final_status"] == "warn" else "info")
+                                 for v in appro + check)))
+    if fmt:
+        sections.append(("sec-format", "格式调整", len(fmt),
+                         "".join(item_html(v, "info") for v in fmt)))
+
+    # 附录: 问题行显式列出，无问题条目折叠（P1-3），误报行内备注（P1-2）
+    problem_ids = {v["id"] for v in must + appro + fmt + check}
+    rows_problem, rows_ok = [], []
+    for e in entries:
+        eid = e["id"]
+        v = vmap.get(eid)
+        r = results.get(eid, {})
+        desc = esc(e["raw"][:90] + ("…" if len(e["raw"]) > 90 else ""))
+        links = _links_html(_report_links(r))
+        st = v["final_status"] if v else "ok"
+        badge = _badge(FINAL_ICON[st], st)
+        note = ""
+        if v and v.get("note"):
+            note = f'<div class="muted">{esc(v["note"])}</div>'
+        elif eid not in problem_ids and (r.get("mismatches")
+                                         or r.get("status") == "not_found"):
+            n_mm = len(r.get("mismatches") or [])
+            hint = (f"曾自动标记 {n_mm} 项字段差异，复核为误报" if n_mm
+                    else "曾自动未匹配，复核确认存在")
+            note = f'<div class="muted">{esc(hint)}</div>'
+        row = (f'<tr><td>{esc(eid)}</td><td class="ref-text">{desc}</td>'
+               f'<td>{badge}</td><td>{links}</td></tr>{note}')
+        (rows_problem if eid in problem_ids else rows_ok).append(row)
+
+    n_a = sum(1 for c in citations if c.get("triage") == "A")
+    caps = data.get("summary_stats", {}).get("source_capabilities", {})
+
+    nav = ['<a href="#overview">总览</a>']
+    for sid, title, cnt, _body in sections:
+        nav.append(f'<a href="#{sid}">{title}<span class="cnt hot-{"warn" if sid != "sec-check" else "info"}">{cnt}</span></a>')
+    nav.append(f'<a href="#appendix">附录 · 全部 {len(entries)} 条</a>')
+
+    H = [f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>参考文献检查报告（定稿）— {esc(stem)}</title>
+<style>{REPORT_CSS}</style>
+</head>
+<body>
+<div class="container">
+<header class="paper">
+  <div class="eyebrow">Reference integrity review · final</div>
+  <h1>参考文献检查报告</h1>
+  <div class="meta">{esc(stem)} ｜ 定稿 {today} ｜ 已完成 AI 复核，以下为最终结论</div>
+  <div class="context"><span>文献列表 {len(entries)} 条</span>
+  <span>正文引用 {len(citations)} 处</span><span>A 类深查 {n_a} 处</span></div>
+</header>
+
+<div class="report-layout">
+<nav class="topnav" aria-label="报告目录">{''.join(nav)}</nav>
+<main class="report-main">
+<div id="overview" class="overview-heading"><h2>核验结论</h2></div>
+<div class="summary-grid">"""]
+
+    cards = [
+        (len(must), "bad" if must else "zero", "🔴 必须修改"),
+        (len(appro) + len(check), "warn" if (appro or check) else "zero", "⚠️ 存疑 / 建议核对"),
+        (len(fmt), "info" if fmt else "zero", "🔵 格式调整"),
+        (len(entries) - n_problem, "ok", f"✅ 其余确认（共 {len(entries)} 条）"),
+    ]
+    for num, cls, label in cards:
+        H.append(f'<div class="stat-card"><div class="num {cls}">{num}</div>'
+                 f'<div class="label">{label}</div></div>')
+    H.append('</div>')
+
+    for sid, title, cnt, body in sections:
+        cls = {"sec-must": "critical", "sec-check": "attention",
+               "sec-format": "notice"}[sid]
+        H.append(f'<section id="{sid}" class="{cls}">'
+                 f'<h2>{title}<span class="cnt2">{cnt}</span></h2>{body}</section>')
+
+    H.append('<section id="appendix" class="review">'
+             f'<h2>附录 · 全部文献核验清单</h2>')
+    if rows_problem:
+        H.append('<p class="muted">以下为需关注条目；行内灰字为已排除的'
+                 '自动误报备注。</p>'
+                 '<table class="appendix"><thead><tr><th>ID</th><th>文献</th>'
+                 '<th>结论</th><th>复核</th></tr></thead><tbody>'
+                 + "".join(rows_problem) + '</tbody></table>')
+    if rows_ok:
+        H.append(f'<details><summary>显示其余 {len(rows_ok)} 条已确认条目</summary>'
+                 '<table class="appendix"><thead><tr><th>ID</th><th>文献</th>'
+                 '<th>结论</th><th>复核</th></tr></thead><tbody>'
+                 + "".join(rows_ok) + '</tbody></table></details>')
+    H.append('</section>')
+
+    H.append(f"""<footer>核验范围：存在性 ×{len(entries)}（OpenAlex / Crossref / 出版商交叉）·
+书目元数据 · 正文—列表对应 · A 类引用恰当性 · 格式一致性 ｜
+数据源能力: {esc(json.dumps(caps, ensure_ascii=False))} ｜
+由 ob-reference-check 定稿（final.json 数据驱动渲染）</footer>
+</main>
+</div>
+</div></body></html>""")
+    return "\n".join(H)
+
+
+def _load_refcheck_json(target):
+    target = os.path.abspath(target)
+    if target.endswith(".json"):
+        with open(target, encoding="utf-8") as f:
+            return target, json.load(f)
+    d = os.path.dirname(target)
+    stem = os.path.splitext(os.path.basename(target))[0]
+    cands = sorted(glob.glob(os.path.join(d, f"{stem}_refcheck_*.json")))
+    cands = [c for c in cands if not c.endswith("_final.json")]
+    if not cands:
+        sys.exit(f"[错误] 未找到 {stem}_refcheck_*.json（先跑一次初筛）")
+    with open(cands[-1], encoding="utf-8") as f:
+        return cands[-1], json.load(f)
+
+
+def run_finalize(target, final_path=None):
+    data_path, data = _load_refcheck_json(target)
+    stem = os.path.splitext(os.path.basename(data["paper"]["path"]))[0]
+    outdir = os.path.dirname(data_path)
+    if not final_path:
+        # 候选: 论文原名_final.json（skill 约定）和数据文件同名_final.json
+        for cand in (os.path.join(outdir, f"{stem}_final.json"),
+                     os.path.join(outdir, os.path.splitext(os.path.basename(
+                         data_path))[0] + "_final.json")):
+            if os.path.exists(cand):
+                final_path = cand
+                break
+    if not final_path or not os.path.exists(final_path):
+        sys.exit(f"[错误] 未找到复核结论文件: "
+                 f"{os.path.join(outdir, stem + '_final.json')}"
+                 f"（可用 --final 指定路径）")
+    with open(final_path, encoding="utf-8") as f:
+        payload = json.load(f)
+    verdicts = payload.get("verdicts", payload) if isinstance(payload, dict) else payload
+    _validate_verdicts(data["entries"], data.get("verification", {}), verdicts)
+
+    out = os.path.join(outdir, f"{stem}_refcheck_"
+                       f"{datetime.date.today().strftime('%Y%m%d')}_final.html")
+    report = build_final_report(data, verdicts)
+    _probe_writable(outdir)
+    with open(out, "w", encoding="utf-8") as f:
+        f.write(report)
+
+    # F3 数据飞轮: 复核结论按 DOI 持久化，下次运行自动作为 prior_verdict
+    # 提供，同类误报（online-first 年份等）不再每篇重新人工分诊
+    store = load_verdict_store()
+    by_id = {e["id"]: e for e in data["entries"]}
+    n_saved = 0
+    for v in verdicts:
+        e = by_id.get(v["id"])
+        doi = (e.get("doi") or "").lower().rstrip(".") if e else None
+        if doi:
+            store[doi] = {"final_status": v["final_status"],
+                          "verdict": v.get("verdict"), "action": v.get("action"),
+                          "date": datetime.date.today().isoformat()}
+            n_saved += 1
+    if n_saved:
+        save_verdict_store(store)
+
+    n_bad = sum(1 for v in verdicts if v["final_status"] == "warn")
+    n_info = sum(1 for v in verdicts if v["final_status"] == "info")
+    print(f"✅ 最终报告: {out}")
+    print(f"   ⚠️ 需处理 {n_bad} 项 · ❓ 建议核对 {n_info} 项 · "
+          f"♻️ 复核结论已按 DOI 回流 {n_saved} 条")
+
+
+def run_verify_doi(target, ids):
+    """P2-2: 批量 Crossref DOI 直查，替代 Claude 逐条 WebFetch。"""
+    if target.endswith(".json"):
+        with open(target, encoding="utf-8") as f:
+            entries = json.load(f)["entries"]
+    else:
+        paragraphs = parse_document(target)
+        raw_entries, _ = split_references(paragraphs)
+        if raw_entries is None:
+            sys.exit("[错误] 未找到参考文献列表")
+        entries = [parse_entry(r, i + 1) for i, r in enumerate(raw_entries)]
+    by_id = {e["id"]: e for e in entries}
+    want = [x.strip().upper() for x in ids.split(",") if x.strip()]
+    unknown = [w for w in want if w not in by_id]
+    verifier = Verifier()
+    out = []
+    for w in want:
+        e = by_id.get(w)
+        if e is None:
+            continue
+        doi = e.get("doi")
+        if not doi:
+            out.append({"id": w, "status": "no_doi"})
+            print(f"{w}: 论文该条未写 DOI")
+            continue
+        rec = verifier._crossref_doi_lookup(doi)
+        if rec is None:
+            out.append({"id": w, "doi": doi, "status": "lookup_failed"})
+            print(f"{w}: ❌ DOI 直查失败 {doi}")
+        else:
+            out.append({"id": w, "doi": doi, "status": "found",
+                        "title": rec["title"], "year": rec["year"],
+                        "venue": rec["venue"],
+                        "url": f"https://doi.org/{doi}"})
+            print(f"{w}: ✅ {doi} → {rec['title']} ({rec['year']}) {rec['venue']}")
+    if unknown:
+        print(f"⚠️ 未知条目: {','.join(unknown)}")
+    print(json.dumps(out, ensure_ascii=False))
+
+
+def _probe_writable(outdir):
+    """C8: 输出目录可写性前置探测，避免整套检索跑完才在写报告时失败。"""
+    probe = os.path.join(outdir, f".refcheck_probe_{os.getpid()}")
+    try:
+        with open(probe, "w") as f:
+            f.write("")
+        os.remove(probe)
+    except OSError as ex:
+        sys.exit(f"[错误] 输出目录不可写: {outdir}（{ex}）。"
+                 f"请用 --outdir 指定可写目录")
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -1271,17 +1843,32 @@ def build_report(paper_path, entries, citations, results, corr, dups,
 
 def main():
     ap = argparse.ArgumentParser(description="论文参考文献机械检查")
-    ap.add_argument("paper", help="论文文件 (.docx/.pdf/.md)")
+    ap.add_argument("paper", help="论文文件 (.docx/.pdf/.md)，或 --finalize/"
+                    "--verify-doi 模式下传 *_refcheck_*.json / 论文文件")
     ap.add_argument("--offline", action="store_true",
                     help="只用本地缓存，不访问网络")
     ap.add_argument("--delay", type=float, default=0.15,
                     help="API 请求间隔秒数（礼貌限速）")
     ap.add_argument("--open-draft", action="store_true",
                     help="显式在浏览器打开自动初筛底稿（默认不打开）")
+    ap.add_argument("--outdir", help="报告/数据输出目录（默认论文所在目录）")
+    ap.add_argument("--finalize", action="store_true",
+                    help="读 <论文>_final.json 复核结论，重渲染最终报告 HTML")
+    ap.add_argument("--final", metavar="FINAL_JSON",
+                    help="final.json 路径（默认: 论文同目录 <论文名>_final.json）")
+    ap.add_argument("--verify-doi", metavar="R_IDS",
+                    help="批量 Crossref DOI 直查（如 R7,R16），输出 JSON 供 AI 层直接使用")
     args = ap.parse_args()
 
     if not os.path.exists(args.paper):
         sys.exit(f"[错误] 文件不存在: {args.paper}")
+
+    if args.finalize:
+        run_finalize(args.paper, args.final)
+        return
+    if args.verify_doi:
+        run_verify_doi(args.paper, args.verify_doi)
+        return
 
     print(f"[1/5] 解析文档: {args.paper}")
     paragraphs = parse_document(args.paper)
@@ -1315,20 +1902,35 @@ def main():
         if i < len(entries) and not args.offline:
             time.sleep(args.delay)
 
+    # F3 数据飞轮: 命中历史复核结论的条目附 prior_verdict，AI 层可直接沿用
+    store = load_verdict_store()
+    n_prior = 0
+    for e in entries:
+        doi = (e.get("doi") or "").lower().rstrip(".")
+        if doi and doi in store:
+            results[e["id"]]["prior_verdict"] = store[doi]
+            n_prior += 1
+    if n_prior:
+        print(f"      ♻️ {n_prior} 条命中历史复核结论（见各条 prior_verdict 字段）")
+
     print("[5/5] 机械检查 + 生成报告")
     corr = check_correspondence(entries, citations)
     dups = check_duplicates(entries)
     timeline = check_timeline(entries)
     preprints = check_preprint(entries)
+    cross = {"doi_swaps": check_doi_swaps(entries, results),
+             "ordering": check_ordering(entries),
+             "title_artifacts": check_title_artifacts(entries)}
 
     today = datetime.date.today().strftime("%Y%m%d")
     stem = os.path.splitext(os.path.basename(args.paper))[0]
-    outdir = os.path.dirname(os.path.abspath(args.paper))
+    outdir = args.outdir or os.path.dirname(os.path.abspath(args.paper))
+    _probe_writable(outdir)
     report_path = os.path.join(outdir, f"{stem}_refcheck_{today}.html")
     data_path = os.path.join(outdir, f"{stem}_refcheck_{today}.json")
 
     report = build_report(args.paper, entries, citations, results, corr,
-                          dups, timeline, preprints, verifier.stats)
+                          dups, timeline, preprints, verifier.stats, cross)
     with open(report_path, "w", encoding="utf-8") as f:
         f.write(report)
 
@@ -1345,9 +1947,11 @@ def main():
         "duplicates": dups,
         "timeline": timeline,
         "preprints": preprints,
+        "cross_checks": cross,
         "summary_stats": {
             "entries": len(entries), "citations": len(citations),
             "triage": {"A": n_a, "B": n_b, "C": n_c},
+            "prior_verdicts": n_prior,
             "verifier": verifier.stats,
             "source_capabilities": verifier.source_capabilities},
     }
