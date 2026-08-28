@@ -888,7 +888,9 @@ def check_correspondence(entries, citations):
 
     cited_keys = set()
     unmatched_citations = []
-    for c in citations:
+    for i, c in enumerate(citations):
+        # C 编号 = citations 下标+1，final.json 的 citation 型 verdict 用它做 id
+        c["cid"] = f"C{i + 1}"
         matched = None
         cyear = c["year"].rstrip("abcdefghij")
         for surname in c["authors"]:
@@ -1269,6 +1271,29 @@ def _entry_by_id(entries, eid):
     return {"raw": "?"}
 
 
+def _is_cid(vid):
+    """id 是否为正文引用编号（C1、C2…，指向 citations 下标）。"""
+    return bool(re.fullmatch(r"C\d+", str(vid or "")))
+
+
+def _citation_by_cid(citations, cid):
+    """按 C 编号取 citation；越界返回 None。"""
+    if not _is_cid(cid):
+        return None
+    n = int(cid[1:])
+    return citations[n - 1] if 1 <= n <= len(citations) else None
+
+
+def _citation_cid(citations, c):
+    """按内容定位 citation 的 C 编号（兼容旧缓存 JSON 无 cid 字段）。"""
+    for i, x in enumerate(citations):
+        if (x.get("authors") == c.get("authors")
+                and x.get("year") == c.get("year")
+                and x.get("sentence") == c.get("sentence")):
+            return f"C{i + 1}"
+    return None
+
+
 def build_report(paper_path, entries, citations, results, corr, dups,
                  timeline, preprints, verifier_stats, cross=None):
     today = datetime.date.today().isoformat()
@@ -1326,8 +1351,9 @@ def build_report(paper_path, entries, citations, results, corr, dups,
     if corr["cited_but_missing_in_list"]:
         corr_rows.append("<h3>正文引了，但列表里没有</h3>")
         for c in corr["cited_but_missing_in_list"]:
+            cid = c.get("cid") or _citation_cid(citations, c)
             corr_rows.append(f"""<div class="item info">
-<p>“{esc(c['sentence'][:180])}”</p>
+<p>{_badge(cid or "?", "info")} “{esc(c['sentence'][:180])}”</p>
 <p class="muted">→ 缺失条目：({esc(', '.join(c['authors']))}, {esc(c['year'])})</p>
 </div>""")
     if corr["listed_but_never_cited"]:
@@ -1557,12 +1583,34 @@ def save_verdict_store(store):
     os.replace(tmp, VERDICT_STORE)
 
 
-def _validate_verdicts(entries, verification, verdicts):
-    """final.json 校验（F5: warn/info 结论必须带证据，防未查库断言）。"""
+def _validate_verdicts(entries, verification, verdicts,
+                       citations=None, correspondence=None):
+    r"""final.json 校验（F5: warn/info 结论必须带证据，防未查库断言）。
+
+    id 支持两种：条目号（R*，指向文献列表）与正文引用号（C\d+，指向
+    citations 下标）——后者让"正文引用但列表缺失"类问题获得结论出口
+    （2026-08-28 缺口修复，docs/correspondence-gap-and-fix.md）。
+    """
     by_id = {e["id"]: e for e in entries}
-    errors, seen = [], set()
+    citations = citations or []
+    errors, seen, seen_cid = [], set(), set()
     for v in verdicts:
         vid = v.get("id")
+        if _is_cid(vid):
+            if _citation_by_cid(citations, vid) is None:
+                errors.append(f"{vid}: 不存在于正文引用"
+                              f"（citations 共 {len(citations)} 处）")
+                continue
+            seen_cid.add(vid)
+            if v.get("final_status") not in FINAL_ICON:
+                errors.append(f"{vid}: final_status 必须是 ok/warn/info，"
+                              f"当前 {v.get('final_status')!r}")
+            if v.get("final_status") in ("warn", "info"):
+                for k in ("verdict", "evidence", "action"):
+                    if not v.get(k):
+                        errors.append(f"{vid}: {k} 为必填"
+                                      f"（warn/info 结论必须带证据与行动项）")
+            continue
         if vid not in by_id:
             errors.append(f"{vid}: 不存在于文献列表")
             continue
@@ -1584,6 +1632,15 @@ def _validate_verdicts(entries, verification, verdicts):
                           f"（status={r.get('status')}, "
                           f"{len(r.get('mismatches') or [])} 项差异），"
                           f"必须有显式复核结论")
+    # 每条"正文引用但列表缺失"必须有显式结论（同"自动异常必须有结论"规则）：
+    # 确认缺失→warn；复核为匹配误报（年份不一致/拼写差异等）→ok
+    for c in (correspondence or {}).get("cited_but_missing_in_list", []):
+        cid = c.get("cid") or _citation_cid(citations, c)
+        if not cid or cid in seen_cid:
+            continue
+        who = f"({', '.join(c.get('authors', []))}, {c.get('year')})"
+        errors.append(f"{cid}: 正文引用 {who} 在列表中无对应条目，"
+                      f"必须有显式结论（确认缺失→warn；匹配误报→ok）")
     if errors:
         sys.exit("[错误] final.json 校验失败:\n  - " + "\n  - ".join(errors))
 
@@ -1618,9 +1675,28 @@ def build_final_report(data, verdicts):
            and v["final_status"] != "ok"]
     check = [v for v in verdicts if v["final_status"] == "info"
              and cat(v) in ("bibliography", "correspondence")]
-    n_problem = len(must) + len(appro) + len(fmt) + len(check)
+
+    def citation_item_html(v, level):
+        """C 编号 verdict 的卡片：主体是正文引用，显示引用句原文与
+        行动建议；复核入口用 作者+年份 构造 Scholar 搜索。"""
+        c = _citation_by_cid(citations, v["id"])
+        if c is None:
+            return ""
+        who = f"{', '.join(c.get('authors') or [])}, {c.get('year')}"
+        scholar = ("https://scholar.google.com/scholar?q="
+                   + urllib.parse.quote(who))
+        return f"""<div class="item {level}">
+<h3>{_badge(v['id'], level)} {esc(v.get('verdict') or '')}</h3>
+<p class="muted">“{esc((c.get('sentence') or '')[:150])}”</p>
+<p class="muted">→ 引用（{esc(who)}），文献列表中无对应条目</p>
+<p><b>建议：</b>{esc(v.get('action') or '')}</p>
+<p class="muted">依据：{esc(v.get('evidence') or '')}</p>
+<p>复核：{_links_html({'google_scholar': scholar})}</p>
+</div>"""
 
     def item_html(v, level):
+        if _is_cid(v["id"]):
+            return citation_item_html(v, level)
         e = _entry_by_id(entries, v["id"])
         r = results.get(v["id"], {})
         return f"""<div class="item {level}">
@@ -1646,6 +1722,9 @@ def build_final_report(data, verdicts):
     # 附录: 问题行显式列出，无问题条目折叠（P1-3）。
     # 不渲染任何"曾自动标记…误报"类过程备注（2026-08-28 用户反馈）
     problem_ids = {v["id"] for v in must + appro + fmt + check}
+    # "其余确认"按条目计数——C 编号 verdict 的主体不在列表里，
+    # 不应折减条目确认数（2026-08-28 缺口修复）
+    n_problem = sum(1 for pid in problem_ids if not _is_cid(pid))
     rows_problem, rows_ok = [], []
     for e in entries:
         eid = e["id"]
@@ -1840,7 +1919,8 @@ def run_finalize(target, final_path=None):
     with open(final_path, encoding="utf-8") as f:
         payload = json.load(f)
     verdicts = payload.get("verdicts", payload) if isinstance(payload, dict) else payload
-    _validate_verdicts(data["entries"], data.get("verification", {}), verdicts)
+    _validate_verdicts(data["entries"], data.get("verification", {}), verdicts,
+                       data.get("citations", []), data.get("correspondence", {}))
 
     out = os.path.join(outdir, f"{stem}_refcheck_"
                        f"{datetime.date.today().strftime('%Y%m%d')}_final.html")

@@ -359,5 +359,88 @@ class FinalizeTest(unittest.TestCase):
                                  ["final_status"], "warn")
 
 
+def _corr_data():
+    """带"正文引用但列表缺失"的定稿数据: C2 (Pop et al., 2015) 无对应条目。"""
+    data = _finalize_data()
+    data["citations"] = [
+        {"cid": "C1", "authors": ["Author"], "year": "2024",
+         "sentence": "Author (2024) shows this.", "triage": "A"},
+        {"cid": "C2", "authors": ["Pop", "Kang"], "year": "2015",
+         "sentence": "Prior work follows Pop et al. (2015) in this design.",
+         "triage": "B"},
+    ]
+    data["correspondence"] = {
+        "cited_but_missing_in_list": [data["citations"][1]],
+        "listed_but_never_cited": [],
+    }
+    return data
+
+
+CORR_VERDICTS = VERDICTS + [
+    {"id": "C2", "category": "correspondence", "final_status": "warn",
+     "verdict": "正文引用了 Pop et al. (2015)，但参考文献列表中没有对应条目",
+     "evidence": "引用出现在方法部分；列表按姓+年份检索无匹配",
+     "action": "补充完整条目到参考文献列表，或删除该正文引用"},
+]
+
+
+class CorrespondenceVerdictTest(unittest.TestCase):
+    """2026-08-28 缺口修复: "正文引用但列表缺失"通过 C 编号 verdict
+    进入最终报告（docs/correspondence-gap-and-fix.md 方案 A）。"""
+
+    def test_validation_accepts_cid_verdict(self):
+        RC._validate_verdicts(_corr_data()["entries"],
+                              _corr_data()["verification"], CORR_VERDICTS,
+                              _corr_data()["citations"],
+                              _corr_data()["correspondence"])
+
+    def test_validation_rejects_out_of_range_cid(self):
+        bad = [dict(CORR_VERDICTS[3])]
+        bad[0]["id"] = "C9"
+        with self.assertRaises(SystemExit):
+            RC._validate_verdicts(_corr_data()["entries"],
+                                  _corr_data()["verification"], bad,
+                                  _corr_data()["citations"],
+                                  _corr_data()["correspondence"])
+
+    def test_validation_requires_verdict_for_missing_citation(self):
+        # 每条缺失引用必须有显式结论——只给条目 verdict 会拦截
+        with self.assertRaises(SystemExit):
+            RC._validate_verdicts(_corr_data()["entries"],
+                                  _corr_data()["verification"], VERDICTS,
+                                  _corr_data()["citations"],
+                                  _corr_data()["correspondence"])
+
+    def test_validation_locates_old_json_citation_without_cid(self):
+        # 旧缓存 JSON 的 correspondence 项无 cid 字段——按内容回查 citations
+        data = _corr_data()
+        legacy = {k: v for k, v in data["citations"][1].items() if k != "cid"}
+        data["correspondence"]["cited_but_missing_in_list"] = [legacy]
+        RC._validate_verdicts(data["entries"], data["verification"],
+                              CORR_VERDICTS, data["citations"],
+                              data["correspondence"])
+
+    def test_missing_citation_rendered_in_final_report(self):
+        # C 编号卡片进入"必须处理"，显示引用句原文；"其余确认"按条目计数
+        # 不被 C verdict 折减
+        html = RC.build_final_report(_corr_data(), CORR_VERDICTS)
+        self.assertIn("文献列表中无对应条目", html)
+        self.assertIn("Prior work follows Pop et al. (2015)", html)
+        self.assertIn("badge warn\">C2", html)
+        self.assertIn("scholar.google.com", html)
+        self.assertIn('class="num bad">2', html)      # R3 + C2
+        self.assertIn('class="num ok">2', html)       # 其余确认仍是 R1/R2
+        self.assertIn("1 项对应问题", html)            # 检查范围: 对应类 ⚠️
+
+    def test_match_false_positive_resolved_as_ok(self):
+        # 复核为匹配误报（如年份不一致）→ ok，不进必须处理
+        verdicts = [dict(v) for v in VERDICTS] + [
+            {"id": "C2", "category": "correspondence", "final_status": "ok",
+             "note": "引用 2015 为 online-first 年份，对应列表 R1"}]
+        html = RC.build_final_report(_corr_data(), verdicts)
+        self.assertIn('class="num bad">1', html)      # 仅 R3
+        self.assertIn('class="num ok">2', html)
+
+
 if __name__ == "__main__":
     unittest.main()

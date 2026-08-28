@@ -137,6 +137,14 @@ B 类引用只需确认：对应文献 status 是 `found` 且摘要主题与句�
       "verdict": "作为多层级中介例证存疑",
       "evidence": "摘要为跨层次调节而非中介",
       "action": "读原文确认或换例证文献"
+    },
+    {
+      "id": "C7",
+      "category": "correspondence",
+      "final_status": "warn",
+      "verdict": "正文引用了 Pop et al. (2015)，但参考文献列表中没有对应条目",
+      "evidence": "引用出现在方法部分；列表按姓+年份检索无匹配",
+      "action": "补充完整条目到参考文献列表，或删除该正文引用"
     }
   ]
 }
@@ -146,6 +154,7 @@ B 类引用只需确认：对应文献 status 是 `found` 且摘要主题与句�
 
 - `final_status`：`ok` / `warn`（确认需修改/存疑）/ `info`（建议人工核对）
 - `category`（可选，默认 `bibliography`）：`bibliography` / `correspondence` / `appropriateness` / `format`
+- `id` 支持两种：条目号 `R*`（文献列表）与正文引用号 `C1`、`C2`…（初筛 JSON `citations[]` 下标，初筛底稿"正文引了，但列表里没有"小节已标出编号）。**"正文引用但列表缺失"（`cited_but_missing_in_list`）的每条必须有显式结论**：确认缺失→`warn`（写明引用句与建议，最终报告渲染成"必须处理"卡片）；复核为匹配误报（年份不一致、拼写差异，实际对应列表某条）→`ok` + note 说明对应条目
 - **warn/info 必填 `verdict` + `evidence` + `action`**——没有证据不得下结论
 - 自动初筛有异常（not_found / 差异）的条目**必须有显式结论**，不允许静默跳过
 - `note`（可选，**不渲染**）：仅供 AI 层备忘复核理由，最终报告不展示任何"曾自动标记…误报"类过程信息（2026-08-28 用户反馈：看不出指哪条且属中间过程）
