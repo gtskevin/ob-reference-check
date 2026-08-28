@@ -8,10 +8,10 @@ ob-reference-check — 论文参考文献系统检查（机械层）
 做什么（脚本层，零 LLM token）:
     1. 解析 Word / PDF / Markdown 三种格式
     2. 提取参考文献列表条目 + 正文引用标记
-    3. OpenAlex / Crossref / Semantic Scholar 三源轮换验证 + 元数据比对（带全局缓存）
+    3. OpenAlex / Crossref / Semantic Scholar 检索初筛 + 元数据比对（带全局缓存）
     4. 机械检查: 双向对应 / 重复条目 / 时间线异常 / preprint 版本
     5. A/B/C 分诊初筛（承重引用 / 顺带提及 / 引用堆砌）
-    6. 生成自包含 HTML 报告（空问题模块不渲染）+ .json 数据文件（供 Claude 层继续深查）
+    6. 生成自包含 HTML 初筛底稿（默认不打开）+ .json 数据文件（供人工复核）
 
 不做什么:
     - 引用恰当性判断（层 3）→ 由 Claude 读 .json 中的句子+摘要完成
@@ -146,6 +146,10 @@ def split_references(paragraphs):
     current = []
     for p in tail:
         t = p["text"]
+        # In some DOCX manuscripts, tables and figures follow the reference
+        # list in the same document.  They are not reference entries.
+        if re.match(r"^(?:Table|Figure)\s+\d+\b", t, re.IGNORECASE):
+            break
         # 新条目开头: 大写字母开头 + 含 4 位年份（author-year style 通用特征）
         if _looks_like_entry_start(t) and current:
             entries.append(" ".join(current))
@@ -157,14 +161,17 @@ def split_references(paragraphs):
     return entries, ref_para_idx
 
 
-_AUTHOR_START = re.compile(r"^[A-ZÀ-ÿ一-鿿][\w'’\-,. &]+")
+_AUTHOR_START = re.compile(r"^[A-Za-zÀ-ÿ一-鿿][\w'’\-,. &]+")
 
 
 def _looks_like_entry_start(t):
     return bool(_AUTHOR_START.match(t) and re.search(r"\d{4}", t) and len(t) > 20)
 
 
-DOI_RE = re.compile(r"(10\.\d{4,9}/[^\s\"'\]\)]+)")
+# DOI suffixes may legitimately contain parentheses (for example,
+# ``10.1016/0147-1767(86)90007-6``); stop at whitespace rather than treating
+# the first closing parenthesis as the end of the DOI.
+DOI_RE = re.compile(r"(10\.\d{4,9}/[^\s\"'<>\]]+)")
 
 
 def parse_entry(raw, idx):
@@ -195,12 +202,14 @@ def parse_entry(raw, idx):
         authors_str = raw.split(".")[0]
     # 过滤掉缩写名（"A. B."无连续小写字母），只留姓氏
     e["authors"] = [a.strip() for a in re.split(r",|&|;| and ", authors_str)
-                    if re.search(r"[a-zà-ÿ]{2}", a.strip())]
+                    if re.search(r"[A-ZÀ-Ÿ][a-zà-ÿ]{1,}", a.strip())]
 
     # 标题: 年份括号之后到下一个句号分句
     rest = raw[ym.end():] if ym else raw[min(len(authors_str), len(raw)):]
     rest = rest.lstrip("). ").strip()
-    title_m = re.match(r"^(.*?)(?:\.\s|\.$)", rest)
+    # Require the next word after a period to start with a capital letter;
+    # this keeps title abbreviations such as "vs." inside the title.
+    title_m = re.match(r"^(.*?)(?:\.(?:\s+(?=[A-ZÀ-Ÿ])|$))", rest)
     e["title"] = (title_m.group(1).strip() if title_m else rest.split(".")[0]).strip()
     if len(e["title"]) < 8:
         e["title"] = rest[:120]
@@ -234,7 +243,7 @@ def parse_entry(raw, idx):
 
 PAREN_CITE = re.compile(r"[(（]([^()（）]*?\d{4}[^()（）]*?)[)）]")
 NARR_CITE = re.compile(
-    r"([A-ZÀ-ÿ][\w'’\-]+(?:\s+(?:et al\.?|&|and)\s+[A-ZÀ-ÿ][\w'’\-]+)*)"
+    r"([A-ZÀ-ÿ][\w'’\-]+(?:\s+(?:et al\.?|&|and)\s+[A-ZÀ-ÿ][\w'’\-]+|\s+et al\.?)*)"
     r"\s*[(（]\s*(\d{4}[a-z]?)")
 CITE_SPLIT = re.compile(r"[;；]")
 # 括号内单条引用: "Author, 2020" / "Author & B, 2020" / "Author et al., 2020, 2021"
@@ -272,6 +281,10 @@ def extract_citations(body_paragraphs):
                     author_part, year_part = im.group(1).strip(), im.group(2)
                     years = re.findall(r"\d{4}[a-z]?", year_part)
                     surnames = _surnames_from_inline(author_part)
+                    if not surnames:
+                        # Do not treat standalone years or registration IDs
+                        # (e.g., AsPredicted #237396) as author-year citations.
+                        continue
                     for y in years:
                         found.append({"authors": surnames, "year": y,
                                       "raw": part, "narrative": False})
@@ -308,7 +321,7 @@ def _surnames_from_inline(s):
     s = re.sub(r"^(?:see|e\.g\.,?|cf\.?)\s*,?\s*", "", s.strip(), flags=re.IGNORECASE)
     names = []
     for part in s.split(","):
-        part = part.strip(" .")
+        part = re.sub(r"[’']s$", "", part.strip(" ."), flags=re.IGNORECASE)
         words = [w for w in part.split() if w]
         if not words:
             continue
@@ -339,9 +352,14 @@ class Verifier:
         self.cache_dir = cache_dir
         os.makedirs(cache_dir, exist_ok=True)
         self.openalex_key = _env_any("OPENALEX_API_KEY")
-        self.crossref_key = _env_any("CROSSREF_API_KEY")
         self.s2_key = _env_any("SEMANTIC_API_KEY", "SEMANTIC_SCHOLAR_API_KEY",
                                "S2_API_KEY")
+        # 只记录能力等级，不写入或输出任何密钥。无 Key 时仍使用前两家的公开接口。
+        self.source_capabilities = {
+            "openalex": "key" if self.openalex_key else "public",
+            "crossref": "public",
+            "semantic_scholar": "key" if self.s2_key else "not_configured",
+        }
         self.stats = {"cache_hit": 0, "api_openalex": 0, "api_crossref": 0,
                       "api_s2": 0, "failed": 0}
         self._openalex_dead = False  # 熔断: 连续 429 后本次运行不再请求 OpenAlex
@@ -396,7 +414,9 @@ class Verifier:
     def verify(self, entry):
         """返回 {status, confidence, source, record, mismatches, links, abstract}"""
         title = entry.get("title") or ""
-        key = "v2:" + re.sub(r"\W+", " ", title.lower()).strip()[:200]
+        # Bump the cache namespace when parsing rules change; otherwise a
+        # corrected author/DOI/title parse could keep stale mismatches.
+        key = "v3:" + re.sub(r"\W+", " ", title.lower()).strip()[:200]
         cached = self._cache_get(key)
         if cached and self.offline:
             return cached["data"]
@@ -430,10 +450,13 @@ class Verifier:
             if rec is not None:
                 break
         if rec is None:
-            return {"status": "not_found", "confidence": "high",
+            # 公共索引的覆盖、检索限流和条目解析都会造成漏检；自动未匹配不是
+            # “文献不存在”的证据，必须由 Skill 层二次复核后才能形成最终结论。
+            return {"status": "not_found", "confidence": "low",
                     "source": "openalex+crossref+semanticscholar", "record": None,
                     "mismatches": [], "links": self._search_links(entry),
-                    "abstract": None, "note": "各数据库均无匹配"}
+                    "abstract": None,
+                    "note": "自动检索未匹配，必须人工复核；不能据此断言为编造或真实缺失"}
         mismatches = _compare_metadata(entry, rec)
         return {"status": "found", "confidence": "medium" if mismatches else "high",
                 "source": rec["_source"], "record": rec,
@@ -692,7 +715,11 @@ def _compare_metadata(entry, rec):
 
 def entry_key(e):
     # 年份统一为字符串，避免 int/str 元组不匹配
-    return (re.sub(r"\W+", "", (e["authors"][0] if e["authors"] else "").lower()),
+    first = e["authors"][0] if e["authors"] else ""
+    # In-text citations reduce compound surnames such as "Van Dyne" to the
+    # final surname token; use the same comparison key for the reference list.
+    first = first.split()[-1] if first.split() else ""
+    return (re.sub(r"\W+", "", first.lower()),
             str(e["year"]) if e["year"] else None)
 
 
@@ -762,7 +789,7 @@ def check_preprint(entries):
 # 6. 报告生成（独立 HTML，自包含样式，浏览器直接打开）
 # ---------------------------------------------------------------------------
 
-STATUS_ICON = {"found": "✅", "not_found": "❌", "unverified": "❓"}
+STATUS_ICON = {"found": "✅", "not_found": "⚠️", "unverified": "❓"}
 
 REPORT_CSS = """
 :root {
@@ -998,7 +1025,10 @@ def build_report(paper_path, entries, citations, results, corr, dups,
                  timeline, preprints, verifier_stats):
     today = datetime.date.today().isoformat()
     stem = os.path.splitext(os.path.basename(paper_path))[0]
-    esc = html_mod.escape
+    # Report fields can legitimately be absent (for example, a database
+    # record may not expose an issue or page range).  Normalize those values
+    # before HTML escaping so report generation never fails on None/int data.
+    esc = lambda value: html_mod.escape("" if value is None else str(value))
     n_found = sum(1 for r in results.values() if r["status"] == "found")
     n_notfound = sum(1 for r in results.values() if r["status"] == "not_found")
     n_unver = sum(1 for r in results.values() if r["status"] == "unverified")
@@ -1015,14 +1045,14 @@ def build_report(paper_path, entries, citations, results, corr, dups,
         if r["status"] != "not_found":
             continue
         e = _entry_by_id(entries, eid)
-        nf_rows.append(f"""<div class="item crit">
-<h3>{_badge(eid, 'bad')} {esc(e['raw'][:150])}</h3>
-<p class="muted">各数据库均无匹配（标题相似度 &lt; 0.75），建议人工确认是否为 AI 编造。</p>
+        nf_rows.append(f"""<div class="item warn">
+<h3>{_badge(eid, 'warn')} {esc(e['raw'][:150])}</h3>
+<p class="muted">自动检索未匹配，不构成“文献不存在”结论。请以 DOI、出版商页或多数据库检索完成二次复核。</p>
 <p>复核：{_links_html(_report_links(r))}</p>
 </div>""")
     if nf_rows:
-        sections.append(("sec-notfound", "❌ 疑似不存在的文献", "疑似编造",
-                         n_notfound, "hot-bad", "".join(nf_rows)))
+        sections.append(("sec-notfound", "⚠️ 自动未匹配（需复核）", "待复核",
+                         n_notfound, "hot-warn", "".join(nf_rows)))
 
     mm_rows = []
     for eid, r in results.items():
@@ -1114,7 +1144,7 @@ def build_report(paper_path, entries, citations, results, corr, dups,
   <div class="eyebrow">Reference integrity review</div>
   <h1>参考文献检查报告</h1>
   <div class="meta">{esc(stem)} ｜ 检查日期 {today} ｜
-  自动核验结果</div>
+  自动初筛结果（尚非最终结论）</div>
   <div class="context"><span>文献列表 {len(entries)} 条</span>
   <span>正文引用 {len(citations)} 处</span><span>支持 DOCX / PDF / Markdown</span></div>
 </header>
@@ -1123,7 +1153,7 @@ def build_report(paper_path, entries, citations, results, corr, dups,
 <nav class="topnav" id="contents" aria-label="报告目录">{''.join(nav_links)}</nav>
 <main class="report-main">
 <div id="overview" class="overview-heading"><h2>核验概览</h2>
-<p>优先处理红色项；其余问题可按下方目录逐项复核。</p></div>
+<p>本页是自动初筛底稿；所有异常项须人工复核后才可形成最终结论。</p></div>
 <div class="summary-grid">""")
 
     n_ok = n_found - n_mm
@@ -1140,7 +1170,7 @@ def build_report(paper_path, entries, citations, results, corr, dups,
 
     cards = [
         (n_ok, "ok" if n_ok else "zero", "✅ 确认存在且一致"),
-        (n_notfound, highest_severity(bad=n_notfound), "❌ 投稿前优先处理"),
+        (n_notfound, highest_severity(warn=n_notfound), "⚠️ 自动未匹配（需复核）"),
         (n_mm, highest_severity(warn=n_mm), "⚠️ 文献信息需修正"),
         (n_other, highest_severity(warn=n_misc,
                                    info=n_unver + n_corr_cited + n_corr_listed),
@@ -1159,7 +1189,7 @@ def build_report(paper_path, entries, citations, results, corr, dups,
     def existence_status():
         status = []
         if n_notfound:
-            status.append(f'<span class="scope-bad">疑似不存在 {n_notfound} 项：见下方详情</span>')
+            status.append(f'<span class="scope-warn">自动未匹配 {n_notfound} 项：须人工复核</span>')
         if n_unver:
             status.append(f'<span class="scope-info">无法确认 {n_unver} 项：见下方详情</span>')
         return "".join(status) or '<span class="scope-ok">已检查：未发现问题</span>'
@@ -1181,7 +1211,7 @@ def build_report(paper_path, entries, citations, results, corr, dups,
          "需按目标期刊要求检查格式规则是否统一。"),
     ]
     scope_html = ['<section id="scope" class="scope review"><h2>本次核验范围</h2>',
-                  '<p class="scope-intro">没有显示问题不等于没有检查。本报告已完成以下自动核验；'
+                  '<p class="scope-intro">没有显示问题不等于没有检查。本页仅为自动初筛；'
                   '标为“可继续由 AI 审读”的项目需要结合论文内容或目标期刊要求判断。</p>',
                   '<div class="scope-grid">']
     for title, status, detail in scope_items:
@@ -1215,7 +1245,7 @@ def build_report(paper_path, entries, citations, results, corr, dups,
     for e in sorted(entries, key=_row_rank):
         r = results.get(e["id"], {})
         status = r.get("status", "unverified")
-        icon = {"found": "ok", "not_found": "bad", "unverified": "gray"}[status]
+        icon = {"found": "ok", "not_found": "warn", "unverified": "gray"}[status]
         label = STATUS_ICON.get(status, "❓")
         if r.get("mismatches"):
             icon, label = "warn", "⚠️"
@@ -1226,7 +1256,7 @@ def build_report(paper_path, entries, citations, results, corr, dups,
                  f'<td>{_links_html(_report_links(r))}</td></tr>')
     H.append("</tbody></table></section>")
 
-    H.append("""<footer>由 ob-reference-check 生成 · 本报告用于投稿前的参考文献核验与人工复核</footer>
+    H.append("""<footer>由 ob-reference-check 生成 · 自动初筛底稿，须经人工复核后再交付最终结论</footer>
 </main>
 </div>
 </div></body></html>""")
@@ -1246,6 +1276,8 @@ def main():
                     help="只用本地缓存，不访问网络")
     ap.add_argument("--delay", type=float, default=0.15,
                     help="API 请求间隔秒数（礼貌限速）")
+    ap.add_argument("--open-draft", action="store_true",
+                    help="显式在浏览器打开自动初筛底稿（默认不打开）")
     args = ap.parse_args()
 
     if not os.path.exists(args.paper):
@@ -1316,19 +1348,20 @@ def main():
         "summary_stats": {
             "entries": len(entries), "citations": len(citations),
             "triage": {"A": n_a, "B": n_b, "C": n_c},
-            "verifier": verifier.stats},
+            "verifier": verifier.stats,
+            "source_capabilities": verifier.source_capabilities},
     }
     with open(data_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=1)
 
     print()
-    print(f"✅ 检查报告: {report_path}")
+    print(f"✅ 自动初筛底稿: {report_path}")
     print(f"✅ 数据文件: {data_path}（Claude 层深查用）")
     nf = sum(1 for r in results.values() if r["status"] == "not_found")
     if nf:
-        print(f"🚨 发现 {nf} 条疑似不存在的文献，见报告「疑似不存在的文献」一节")
-    # macOS 下自动在浏览器打开（报告是自包含 HTML）
-    if sys.platform == "darwin":
+        print(f"⚠️ {nf} 条自动未匹配：必须人工复核，不能据此断言为编造或真实缺失")
+    # 初筛底稿不应打断用户；只有显式要求时才打开。
+    if args.open_draft and sys.platform == "darwin":
         try:
             subprocess.run(["open", report_path], check=False)
         except OSError:

@@ -1,9 +1,12 @@
 """Regression checks for report navigation and AI follow-up guidance."""
 
 import importlib.util
+import os
 import pathlib
+import tempfile
 import unittest
 from html.parser import HTMLParser
+from unittest import mock
 
 
 SCRIPT_PATH = (pathlib.Path(__file__).resolve().parents[1]
@@ -150,6 +153,48 @@ class ReportUiTest(unittest.TestCase):
 
         self.assertIn('<span class="scope-info">发现 1 项：见下方详情</span>', report)
         self.assertNotIn('<span class="scope-warn">发现 1 项：见下方详情</span>', report)
+
+    def test_automatic_unmatched_result_is_not_presented_as_nonexistent(self):
+        verifier = REFCHECK.Verifier(cache_dir=tempfile.mkdtemp())
+        verifier._search_openalex = lambda title, entry: None
+        verifier._search_crossref = lambda title, entry: None
+        verifier._search_s2 = lambda title, entry: None
+
+        result = verifier._verify_online(
+            {"raw": "Author, A. (2024). A plausible title.",
+             "title": "A plausible title."},
+            "A plausible title.",
+        )
+
+        self.assertEqual("not_found", result["status"])
+        self.assertEqual("low", result["confidence"])
+        self.assertIn("人工复核", result["note"])
+        self.assertNotIn("不存在", result["note"])
+
+    def test_draft_report_labels_automatic_unmatched_as_review_required(self):
+        report = REFCHECK.build_report(
+            "draft.md",
+            [{"id": "R1", "raw": "Author, A. (2024). Unmatched title.",
+              "doi": None, "title": "Unmatched title", "year": "2024",
+              "venue": "Journal"}],
+            [],
+            {"R1": {"status": "not_found", "mismatches": [], "links": {},
+                    "note": "自动检索未匹配，必须人工复核"}},
+            {"cited_but_missing_in_list": [], "listed_but_never_cited": []},
+            [], [], [], {},
+        )
+
+        self.assertIn("自动未匹配（需复核）", report)
+        self.assertNotIn("疑似不存在的文献", report)
+        self.assertIn("自动初筛结果", report)
+
+    def test_source_capabilities_are_explicit_without_exposing_keys(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            verifier = REFCHECK.Verifier(cache_dir=tempfile.mkdtemp())
+
+        self.assertEqual("public", verifier.source_capabilities["openalex"])
+        self.assertEqual("public", verifier.source_capabilities["crossref"])
+        self.assertEqual("not_configured", verifier.source_capabilities["semantic_scholar"])
 
 
 if __name__ == "__main__":
