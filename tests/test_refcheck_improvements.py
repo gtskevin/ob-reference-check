@@ -6,6 +6,7 @@ C5 引语页码后缀 / C6 parser + DOI 兜底 / P0-1 定稿机制 / F5 证据�
 """
 
 import importlib.util
+import json
 import pathlib
 import tempfile
 import unittest
@@ -269,12 +270,78 @@ class FinalizeTest(unittest.TestCase):
         self.assertNotIn('badge warn">✅', html)
         self.assertIn('class="num bad">1', html)      # 必须修改 = R3
         self.assertIn('class="num ok">2', html)       # 其余确认 = R1/R2
-        # P1-1 无过程栏目 / P1-2 误报行内备注 / P1-3 折叠 / P1-4 footer
-        self.assertIn("online-first 误报", html)
+        # P1-1 无过程栏目 / P1-3 折叠 / 检查范围小节在总览下（2026-08-28 用户反馈）
         self.assertIn("<details>", html)
-        self.assertIn("核验范围：", html)
+        self.assertIn("本次检查范围", html)
+        self.assertIn("文献存在性核验", html)
+        # 检查范围必须完整列 8 类——零命中类别也保留（用户反馈×2：
+        # 覆盖面展示是让用户放心的信息，不因无发现而静默省略）
+        for cat in ("重复条目检测", "时间线与预印本检查", "列表内部一致性交叉检测",
+                    "引用恰当性深查", "格式一致性与书目通读"):
+            self.assertIn(cat, html)
+        self.assertIn("未发现重复", html)   # _finalize_data 无 duplicates 命中
+        # 有发现的类别用琥珀色 ⚠️ 而非绿勾（用户反馈×4：8 格全绿与
+        # "必须处理 N 项"矛盾）
+        self.assertIn('class="scope-warn"', html)
+        self.assertIn("需修改 1 项", html)  # must = R3
+        self.assertNotIn('✅ 全部一致或差异已排除', html)  # 有 must 时不显绿
         self.assertNotIn('class="todo"', html)
-        self.assertNotIn("本次核验范围", html)
+
+    def test_process_notes_not_rendered(self):
+        # 2026-08-28 用户反馈: "曾自动标记…误报"类行内备注看不出指哪条，
+        # 属中间过程，最终报告一律不渲染
+        html = RC.build_final_report(_finalize_data(), VERDICTS)
+        self.assertNotIn("online-first 误报", html)
+        self.assertNotIn("曾自动标记", html)
+        self.assertNotIn("复核为误报", html)
+
+    def test_final_links_only_doi_and_scholar(self):
+        # 2026-08-28 用户反馈: 复核入口按钮太多——只留 DOI + Scholar；
+        # 无 DOI 的条目仅 Scholar 搜索；卡片里的复核按钮同样走 Scholar
+        e = _entry(doi="10.1/a", title="Some Title")
+        result = {"links": {"doi": "https://doi.org/10.1/a",
+                            "openalex": "https://oa/1", "s2": "https://s2/1",
+                            "google_scholar": "https://scholar?q=1"}}
+        self.assertEqual(RC._final_links(result, e),
+                         {"doi": "https://doi.org/10.1/a",
+                          "google_scholar": "https://scholar?q=1"})
+        no_doi = RC._final_links({"links": {"openalex_search": "https://oa?s=1"}},
+                                 _entry(title="QueryTitle"))
+        self.assertEqual(set(no_doi), {"google_scholar"})
+        self.assertIn("QueryTitle", no_doi["google_scholar"])
+
+    def test_review_links_and_footer_disclaimer(self):
+        # 渲染层: 报告中不出现 OpenAlex/Semantic Scholar 按钮；附录说明
+        # ⚠️/❓ 含义；footer 带警示色的人工复核提醒（2026-08-28 用户反馈）
+        data = _finalize_data()
+        data["verification"]["R1"]["links"] = {
+            "doi": "https://doi.org/10.1/a", "openalex": "https://oa/1",
+            "s2": "https://s2/1", "google_scholar": "https://scholar?q=x"}
+        data["verification"]["R3"]["links"] = {"openalex_search": "https://oa?s=q"}
+        html = RC.build_final_report(data, VERDICTS)
+        self.assertNotIn("OpenAlex ↗", html)
+        self.assertNotIn("Semantic Scholar ↗", html)
+        self.assertIn("DOI ↗", html)
+        self.assertIn("Scholar 搜索 ↗", html)
+        self.assertIn("确认需修改或存疑", html)      # ⚠️ 含义说明
+        self.assertIn("建议人工核对", html)          # ❓ 含义说明
+        self.assertIn("foot-warn", html)
+        self.assertIn("建议经人工复核后再交付", html)
+
+    def test_finalize_accepts_final_json_directly(self):
+        # 2026-08-28 实测踩坑: 直接传 *_final.json 曾 KeyError('paper')——
+        # 现在自动定位同目录初筛数据
+        with tempfile.TemporaryDirectory() as td:
+            data = _finalize_data()
+            data["paper"]["path"] = str(pathlib.Path(td) / "paperX.docx")
+            rc_path = pathlib.Path(td) / "paperX_refcheck_20260828.json"
+            rc_path.write_text(json.dumps(data), encoding="utf-8")
+            final_path = pathlib.Path(td) / "paperX_final.json"
+            final_path.write_text(json.dumps({"verdicts": VERDICTS}),
+                                  encoding="utf-8")
+            got_path, got = RC._load_refcheck_json(str(final_path))
+            self.assertEqual(got_path, str(rc_path))
+            self.assertIn("entries", got)
 
     def test_finalize_persists_verdicts_by_doi(self):
         # F3: 定稿后结论按 DOI 回流 verdict store

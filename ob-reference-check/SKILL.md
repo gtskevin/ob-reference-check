@@ -22,6 +22,7 @@ python3 -m venv <skill_dir>/scripts/.venv
 之后每次用 `<skill_dir>/scripts/.venv/bin/python` 运行。如果用户机器上已有这些包（python-docx / pymupdf），直接 `python3` 也行。
 
 **已知沙箱限制**（Claude Code 环境，2026-08-28 实测）：
+
 - `pip install` 可能 SSL 失败 → 需要非沙箱运行
 - 写论文所在目录（如坚果云同步目录）会被沙箱拦截 → 脚本跑检索前会先探测可写性并 fail fast，此时改用非沙箱重跑（结果有缓存，第二次很快），或加 `--outdir` 输出到可写目录
 
@@ -46,6 +47,7 @@ python3 -m venv <skill_dir>/scripts/.venv
 ### 第 2 步：汇总异常并二次复核（内部完成，不展示中间报告）
 
 读 `*_refcheck_*.json`。脚本已把正文引用分为：
+
 - **A 类（承重引用）**：出现在假设/理论推导句中 → 需要逐条深查
 - **B 类（顺带提及）**：背景性引用 → 轻查（真实 + 主题相关）
 - **C 类（引用堆砌）**：单括号 ≥3 条并排 → 跳过恰当性（堆砌处本就不逐条深支撑）
@@ -66,15 +68,18 @@ python3 -m venv <skill_dir>/scripts/.venv
 ### 第 3 步：A 类深查（引用恰当性）
 
 对每条 A 类引用，用 JSON 里的两个字段做判断：
+
 - `citations[i].sentence` — 正文引用处的完整句子
 - `verification[R*].abstract` — 数据库返回的文献摘要
 
 判断标准（写进报告时必须引用证据）：
+
 1. 摘要中是否能找到对句子所述关系的**直接或合理间接支撑**
 2. 结论方向是否一致（论文说正相关，文献是否真的是正相关）
 3. 构念是否对齐（论文的 X/Y 与文献研究的变量是否同名同义）
 
 输出三档：
+
 - ✅ 支撑 — 摘要明确支持论述
 - ⚠️ 存疑 — 摘要与论述有出入（写明哪里对不上，这是最有价值的发现）
 - ❓ 摘要不足 — 文献真实但摘要信息不够判断（建议人工读原文）
@@ -90,6 +95,7 @@ B 类引用只需确认：对应文献 status 是 `found` 且摘要主题与句�
 ### 第 5 步：格式一致性与列表 sanity 审查
 
 读参考文献列表原文（JSON 的 `entries[].raw`），检查同一 style 内部统一性：
+
 - et al. 使用规则是否一致（以论文主体风格为准，跨 style 混用才报告）
 - `&` vs `and` 是否混用
 - 年份括号、卷期斜体（markdown 中表现为 `*`）、页码范围符号（- vs –）是否统一
@@ -98,6 +104,7 @@ B 类引用只需确认：对应文献 status 是 `found` 且摘要主题与句�
 只报告**不一致**（内部矛盾），不要求符合某个特定 style——用户的论文未必是 APA，都是 OB 常用 style。
 
 **书目 sanity 清单**（脚本交叉检测之外，通读一遍列表人工兜底——2026-08-28 复盘：5 个真问题靠通读发现，机器召回仅 29%）：
+
 - [ ] 期刊名单复数/拼写（Review vs Reviews——脚本词级比对已覆盖，但新期刊名仍可能漏）
 - [ ] DOI 前缀与期刊匹配（AMJ 论文配 10.5465/amj、Annals 配 10.5465/19416520 等）
 - [ ] 标题开头是否有残留章节号/编号
@@ -109,34 +116,52 @@ B 类引用只需确认：对应文献 status 是 `found` 且摘要主题与句�
 把第 2-5 步的最终结论写成 `<论文名>_final.json`（论文同目录）：
 
 ```json
-{"verdicts": [
-  {"id": "R52", "final_status": "warn", "verdict": "期刊名拼写错误",
-   "evidence": "出版商页面为 Neuroscience & Biobehavioral Reviews",
-   "action": "Review → Reviews"},
-  {"id": "R26", "final_status": "ok", "note": "曾自动未匹配，复核确认存在（直接引语页码后缀导致）"},
-  {"id": "R45", "category": "appropriateness", "final_status": "warn",
-   "verdict": "作为多层级中介例证存疑", "evidence": "摘要为跨层次调节而非中介",
-   "action": "读原文确认或换例证文献"}
-]}
+{
+  "verdicts": [
+    {
+      "id": "R52",
+      "final_status": "warn",
+      "verdict": "期刊名拼写错误",
+      "evidence": "出版商页面为 Neuroscience & Biobehavioral Reviews",
+      "action": "Review → Reviews"
+    },
+    {
+      "id": "R26",
+      "final_status": "ok",
+      "note": "曾自动未匹配，复核确认存在（直接引语页码后缀导致）"
+    },
+    {
+      "id": "R45",
+      "category": "appropriateness",
+      "final_status": "warn",
+      "verdict": "作为多层级中介例证存疑",
+      "evidence": "摘要为跨层次调节而非中介",
+      "action": "读原文确认或换例证文献"
+    }
+  ]
+}
 ```
 
 字段规则（脚本会校验，不合格直接报错）：
+
 - `final_status`：`ok` / `warn`（确认需修改/存疑）/ `info`（建议人工核对）
 - `category`（可选，默认 `bibliography`）：`bibliography` / `correspondence` / `appropriateness` / `format`
 - **warn/info 必填 `verdict` + `evidence` + `action`**——没有证据不得下结论
 - 自动初筛有异常（not_found / 差异）的条目**必须有显式结论**，不允许静默跳过
-- `note`（可选）：误报降级为附录行内备注的唯一渠道，写清"曾自动标记什么、复核为什么排除"
+- `note`（可选，**不渲染**）：仅供 AI 层备忘复核理由，最终报告不展示任何"曾自动标记…误报"类过程信息（2026-08-28 用户反馈：看不出指哪条且属中间过程）
 
 然后渲染并交付：
 
 ```bash
-<python> <skill_dir>/scripts/refcheck.py --finalize <论文文件或json> [--final xx.json]
+<python> <skill_dir>/scripts/refcheck.py --finalize <论文文件 | 初筛json | final.json> [--final xx.json]
 open <论文名>_refcheck_YYYYMMDD_final.html
 ```
 
+三种入参等价（脚本会自动定位初筛数据和结论文件）：论文文件、`*_refcheck_*.json`、或直接给 `*_final.json`。
+
 脚本按 final.json 数据驱动渲染最终报告（概览卡片/nav 计数/各节/附录徽章全部同源），并把结论按 DOI 回流 `~/.reference_check/verdicts.json`（下次检查同批文献自动作为 `prior_verdict` 提供）。
 
-**最终报告信息架构**（用户 2026-08-28 反馈，模板已固化）：概览只留行动导向卡片（必须修改/存疑核对/格式/其余确认），无重复段落文字；无过程性栏目（"二次复核""排除误报 N 项"之类不出现）；误报只作附录行内灰字备注；无问题条目默认折叠。
+**最终报告信息架构**（用户 2026-08-28 反馈，模板已固化）：概览只留行动导向卡片（必须修改/存疑核对/格式/其余确认），无重复段落文字；无过程性栏目（"二次复核""排除误报 N 项""曾自动标记…误报"之类一律不出现，note 字段不渲染）；总览下方有"本次检查范围"小节（脚本自动生成，**完整列出 8 类检查——存在性 / 元数据 / 正文对应 / 重复 / 时间线与预印本 / 列表内交叉检测 / 恰当性 / 格式，零命中的类别也保留"未发现问题"，让用户看到覆盖面而放心**）；scope 状态语义：**绿勾只表示"未发现问题"，有发现的类别用琥珀色 ⚠️ + 计数并标注"见下方详情"**——8 格全绿会和"必须处理 N 项"自相矛盾；复核入口每条只保留 DOI + Scholar 两个按钮（无 DOI 时仅 Scholar，Scholar 比数据库直达对作者更直观）；附录带 ⚠️/❓ 图例说明；无问题条目默认折叠。
 
 只在定稿后做一次交付：向用户输出**一段执行摘要**（不超过 10 行），说明最终必须处理项和仍待作者读原文的项；随后用 `open` 命令打开最终 HTML。除非用户主动要求，否则不要输出过程性结果或打开初筛底稿。
 

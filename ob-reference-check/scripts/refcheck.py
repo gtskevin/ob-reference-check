@@ -45,6 +45,9 @@ import urllib.request
 CACHE_DIR = os.path.expanduser("~/.reference_check/cache")
 USER_AGENT = "ob-reference-check/1.0 (mailto:ob-refcheck@example.com)"
 
+# 语义化版本（发布到 GitHub 后供更新检查比对；详见 SKILL.md 分发说明）
+__version__ = "1.1.0"
+
 # ---------------------------------------------------------------------------
 # 1. 文档解析（三格式 → 段落列表，每段带 heading 信息）
 # ---------------------------------------------------------------------------
@@ -1162,6 +1165,7 @@ a:focus-visible { outline: 2px solid var(--info); outline-offset: 2px;
   color: var(--gray); font-size: 13.5px; margin: 10px 0 14px; background: var(--tint); }
 footer { text-align: center; color: #7d8884; font-size: 12px; margin-top: 30px;
   line-height: 1.6; }
+footer .foot-warn { color: #b45309; font-weight: 600; }
 @media (max-width: 640px) {
   body { padding: 22px 12px 44px; }
   header.paper { padding-top: 16px; }
@@ -1229,6 +1233,24 @@ def _report_links(result):
     q = urllib.parse.quote(title)
     links["google_scholar"] = f"https://scholar.google.com/scholar?q={q}"
     return links
+
+
+def _final_links(result, entry):
+    """最终报告的复核入口（2026-08-28 用户反馈）：只保留 DOI 与 Google
+    Scholar 两个按钮——此前一格里最多并排 4 个数据库链接，对作者太多且
+    不直观；无 DOI 的条目仅保留 Scholar 搜索。"""
+    links = _report_links(result)
+    out = {}
+    if links.get("doi"):
+        out["doi"] = links["doi"]
+    scholar = links.get("google_scholar")
+    if not scholar:
+        title = ((result.get("record") or {}).get("title")
+                 or entry.get("title") or entry.get("raw", ""))
+        scholar = ("https://scholar.google.com/scholar?q="
+                   + urllib.parse.quote(title[:120]))
+    out["google_scholar"] = scholar
+    return out
 
 
 def _nav_cnt(n, hot=""):
@@ -1570,9 +1592,11 @@ def build_final_report(data, verdicts):
     """按复核结论渲染最终报告（P1-1~4 信息架构）。
 
     - 概览只留行动导向卡片，无重复段落文字（P1-1）
-    - 误报降级为附录行内备注，不设过程性栏目（P1-2）
+    - 复核过程与误报备注不展示——用户只看最终结论（P1-2，
+      2026-08-28 用户反馈：行内"曾自动标记…误报"看不出指哪条，删）
     - 无问题条目默认折叠 <details>，仅展开问题行（P1-3）
-    - 核验范围收进 footer 一行（P1-4）
+    - 总览下方保留"本次检查范围"小节，让用户知道覆盖面
+      （P1-4 修订，2026-08-28 用户反馈恢复；footer 不再重复）
     """
     esc = lambda v: html_mod.escape("" if v is None else str(v))
     entries = data["entries"]
@@ -1604,7 +1628,7 @@ def build_final_report(data, verdicts):
 <p class="muted">{esc(e['raw'][:150])}</p>
 <p><b>建议：</b>{esc(v.get('action') or '')}</p>
 <p class="muted">依据：{esc(v.get('evidence') or '')}</p>
-<p>复核：{_links_html(_report_links(r))}</p>
+<p>复核：{_links_html(_final_links(r, e))}</p>
 </div>"""
 
     sections = []
@@ -1619,7 +1643,8 @@ def build_final_report(data, verdicts):
         sections.append(("sec-format", "格式调整", len(fmt),
                          "".join(item_html(v, "info") for v in fmt)))
 
-    # 附录: 问题行显式列出，无问题条目折叠（P1-3），误报行内备注（P1-2）
+    # 附录: 问题行显式列出，无问题条目折叠（P1-3）。
+    # 不渲染任何"曾自动标记…误报"类过程备注（2026-08-28 用户反馈）
     problem_ids = {v["id"] for v in must + appro + fmt + check}
     rows_problem, rows_ok = [], []
     for e in entries:
@@ -1627,26 +1652,17 @@ def build_final_report(data, verdicts):
         v = vmap.get(eid)
         r = results.get(eid, {})
         desc = esc(e["raw"][:90] + ("…" if len(e["raw"]) > 90 else ""))
-        links = _links_html(_report_links(r))
+        links = _links_html(_final_links(r, e))
         st = v["final_status"] if v else "ok"
         badge = _badge(FINAL_ICON[st], st)
-        note = ""
-        if v and v.get("note"):
-            note = f'<div class="muted">{esc(v["note"])}</div>'
-        elif eid not in problem_ids and (r.get("mismatches")
-                                         or r.get("status") == "not_found"):
-            n_mm = len(r.get("mismatches") or [])
-            hint = (f"曾自动标记 {n_mm} 项字段差异，复核为误报" if n_mm
-                    else "曾自动未匹配，复核确认存在")
-            note = f'<div class="muted">{esc(hint)}</div>'
         row = (f'<tr><td>{esc(eid)}</td><td class="ref-text">{desc}</td>'
-               f'<td>{badge}</td><td>{links}</td></tr>{note}')
+               f'<td>{badge}</td><td>{links}</td></tr>')
         (rows_problem if eid in problem_ids else rows_ok).append(row)
 
     n_a = sum(1 for c in citations if c.get("triage") == "A")
     caps = data.get("summary_stats", {}).get("source_capabilities", {})
 
-    nav = ['<a href="#overview">总览</a>']
+    nav = ['<a href="#overview">总览</a>', '<a href="#scope">检查范围</a>']
     for sid, title, cnt, _body in sections:
         nav.append(f'<a href="#{sid}">{title}<span class="cnt hot-{"warn" if sid != "sec-check" else "info"}">{cnt}</span></a>')
     nav.append(f'<a href="#appendix">附录 · 全部 {len(entries)} 条</a>')
@@ -1686,6 +1702,58 @@ def build_final_report(data, verdicts):
                  f'<div class="label">{label}</div></div>')
     H.append('</div>')
 
+    # 检查范围（2026-08-28 用户反馈×2）：总览下展示完整覆盖面——8 类检查
+    # 全部列出，零命中的类别也保留（"未发现问题"本身就是信息），让用户
+    # 对检查全面性放心；不因某类没有发现就静默省略。
+    # 状态语义（2026-08-28 用户反馈×4）：绿勾只留给"未发现问题"；有发现的
+    # 类别用琥珀色 ⚠️ + 计数并指向下方卡片——否则 8 格全绿与"必须处理 N 项"
+    # 自相矛盾。
+    cross = data.get("cross_checks", {})
+    n_cross = sum(len(cross.get(k, [])) for k in
+                  ("doi_swaps", "ordering", "title_artifacts"))
+    n_dup = len(data.get("duplicates", []))
+    n_tl = len(data.get("timeline", [])) + len(data.get("preprints", []))
+    n_corr = sum(1 for v in must + check if cat(v) == "correspondence")
+
+    def scope_status(ok, warn):
+        return (f'<span class="scope-warn">{esc(warn)}</span>' if warn
+                else f'<span class="scope-ok">{esc(ok)}</span>')
+
+    scope_items = [
+        ("文献存在性核验", f"✅ 已核查 ×{len(entries)} 条", None,
+         "每条经 OpenAlex / Crossref / Semantic Scholar 检索，未命中且带 DOI 的条目逐条直查出版商记录"),
+        ("书目元数据逐项比对",
+         "✅ 全部一致或差异已排除",
+         f"⚠️ 需修改 {len(must)} 项，见下方详情" if must else None,
+         "年份 / 作者 / 期刊名 / 卷期页码 / DOI 与数据库记录逐项对照"),
+        ("正文引用 — 文献列表对应", f"✅ ×{len(citations)} 处已核对",
+         f"⚠️ {n_corr} 项对应问题，见下方详情" if n_corr else None,
+         "逐处核对正文引用是否在列表中、列表条目是否被引用，含直接引语页码后缀"),
+        ("重复条目检测", "✅ 未发现重复",
+         f"⚠️ 发现 {n_dup} 项重复" if n_dup else None,
+         "按 DOI 与标题相似度识别列表内重复文献"),
+        ("时间线与预印本检查", "✅ 未发现异常",
+         f"⚠️ {n_tl} 项提醒，见附录" if n_tl else None,
+         "未来年份 / 引用预印本但正式版可能已发表的条目"),
+        ("列表内部一致性交叉检测", "✅ 未发现异常",
+         f"⚠️ {n_cross} 项命中，见下方详情" if n_cross else None,
+         "DOI 互换错挂 / 同作者组年份排序 / 标题残留编号"),
+        ("引用恰当性深查", f"✅ A 类 {n_a} 处已核，未发现存疑",
+         f"⚠️ {len(appro)} 处存疑，见下方详情" if appro else None,
+         "对假设与理论推导处的承重引用，逐处比对文献摘要与论文论述的支撑关系；"
+         "B 类背景引用轻查主题相关性"),
+        ("格式一致性与书目通读", "✅ 未发现不一致",
+         f"⚠️ {len(fmt)} 项建议调整，见下方详情" if fmt else None,
+         "同一 style 内部统一性：et al. 规则、& / and、卷期页符号、期刊名缩写与拼写"),
+    ]
+    H.append('<section id="scope" class="scope review"><h2>本次检查范围</h2>'
+             '<div class="scope-grid">')
+    for title, ok, warn, detail in scope_items:
+        H.append(f'<div class="scope-item"><strong>{esc(title)}</strong>'
+                 f'{scope_status(ok, warn)}'
+                 f'<span>{esc(detail)}</span></div>')
+    H.append('</div></section>')
+
     for sid, title, cnt, body in sections:
         cls = {"sec-must": "critical", "sec-check": "attention",
                "sec-format": "notice"}[sid]
@@ -1695,8 +1763,10 @@ def build_final_report(data, verdicts):
     H.append('<section id="appendix" class="review">'
              f'<h2>附录 · 全部文献核验清单</h2>')
     if rows_problem:
-        H.append('<p class="muted">以下为需关注条目；行内灰字为已排除的'
-                 '自动误报备注。</p>'
+        H.append('<p class="muted">以下为需关注条目：'
+                 '<b>⚠️</b> 确认需修改或存疑（对应上方"必须处理 / 存疑"卡片，'
+                 '含修改建议）；<b>❓</b> 建议人工核对（证据不足以下定论，'
+                 '需读原文或查证后自行判断）；其余 ✅ 条目已确认无误，默认折叠。</p>'
                  '<table class="appendix"><thead><tr><th>ID</th><th>文献</th>'
                  '<th>结论</th><th>复核</th></tr></thead><tbody>'
                  + "".join(rows_problem) + '</tbody></table>')
@@ -1707,10 +1777,8 @@ def build_final_report(data, verdicts):
                  + "".join(rows_ok) + '</tbody></table></details>')
     H.append('</section>')
 
-    H.append(f"""<footer>核验范围：存在性 ×{len(entries)}（OpenAlex / Crossref / 出版商交叉）·
-书目元数据 · 正文—列表对应 · A 类引用恰当性 · 格式一致性 ｜
-数据源能力: {esc(json.dumps(caps, ensure_ascii=False))} ｜
-由 ob-reference-check 定稿（final.json 数据驱动渲染）</footer>
+    H.append(f"""<footer>由 ob-reference-check 生成 · 自动初筛底稿，
+<span class="foot-warn">建议经人工复核后再交付</span>——请勿仅依赖 AI 筛查结论</footer>
 </main>
 </div>
 </div></body></html>""")
@@ -1721,7 +1789,23 @@ def _load_refcheck_json(target):
     target = os.path.abspath(target)
     if target.endswith(".json"):
         with open(target, encoding="utf-8") as f:
-            return target, json.load(f)
+            data = json.load(f)
+        if "entries" in data:
+            return target, data
+        # 传进来的是 *_final.json（只有 verdicts，2026-08-28 实测踩坑）:
+        # 剥掉 _final 后缀，定位同目录的初筛数据文件
+        stem = os.path.splitext(os.path.basename(target))[0]
+        if stem.endswith("_final"):
+            stem = stem[:-len("_final")]
+        d = os.path.dirname(target)
+        cands = [c for c in sorted(glob.glob(
+            os.path.join(d, f"{stem}_refcheck_*.json")))
+            if not c.endswith("_final.json")]
+        if cands:
+            with open(cands[-1], encoding="utf-8") as f:
+                return cands[-1], json.load(f)
+        sys.exit(f"[错误] {target} 是复核结论文件，同目录未找到 "
+                 f"{stem}_refcheck_*.json（先跑一次初筛）")
     d = os.path.dirname(target)
     stem = os.path.splitext(os.path.basename(target))[0]
     cands = sorted(glob.glob(os.path.join(d, f"{stem}_refcheck_*.json")))
@@ -1733,6 +1817,11 @@ def _load_refcheck_json(target):
 
 
 def run_finalize(target, final_path=None):
+    target = os.path.abspath(target)
+    # 直接传 _final.json 时，它本身就是复核结论文件
+    if (not final_path and target.endswith("_final.json")
+            and os.path.exists(target)):
+        final_path = target
     data_path, data = _load_refcheck_json(target)
     stem = os.path.splitext(os.path.basename(data["paper"]["path"]))[0]
     outdir = os.path.dirname(data_path)
