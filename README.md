@@ -57,7 +57,7 @@ AI 辅助写作的幻觉会生成**看起来完全真实的假文献**：作者�
 
 ## 📊 报告长这样
 
-一次检查后，你会得到一份自包含 HTML 报告（示例来自内置测试论文，[你自己也能跑](#手动运行不需要-ai-助手)）：
+一次检查后，你会得到一份自包含 HTML 报告（示例来自内置测试论文，[你自己也能跑](#manual-run)）：
 
 <img src="assets/report-demo.png" alt="ob-reference-check 最终报告示例：总览卡片、8 类检查范围、必须处理的问题卡片" width="800">
 
@@ -65,69 +65,54 @@ AI 辅助写作的幻觉会生成**看起来完全真实的假文献**：作者�
 
 ## 🚀 快速开始
 
-### 方式一：告诉你的 AI 助手（推荐）
+> ⏱️ **1 分钟安装，说一句话开始检查**
 
-把下面这句话发给你的 AI 编程助手，它会帮你装好：
+**方式一：告诉 AI 助手安装（最简单）**
 
-| 平台             | 复制这段话发给 AI                                                                          |
-| ---------------- | ------------------------------------------------------------------------------------------ |
-| **Claude Code**  | `Install the ob-reference-check skill from https://github.com/gtskevin/ob-reference-check` |
-| **OpenAI Codex** | `Install the ob-reference-check skill from https://github.com/gtskevin/ob-reference-check` |
-| **Gemini CLI**   | `Install the ob-reference-check skill from https://github.com/gtskevin/ob-reference-check` |
-| **Cursor**       | 下载仓库文件，放入 `.cursor/rules/`                                                        |
-| **Windsurf**     | 下载仓库文件，放入 `.windsurf/rules/`                                                      |
-| **其他 AI**      | 把 [SKILL.md](ob-reference-check/SKILL.md) 内容放进你的 AI 的自定义指令 / rules 目录       |
+复制粘贴到你的 AI 助手（Claude Code、Codex、Gemini CLI 等都适用）：
 
-> 💡 **没用过终端？** 安装完成后，你只需要在 AI 对话里说一句话：
->
-> **「检查这篇论文的参考文献：我的论文.docx」**
->
-> AI 会自动完成全部检查并打开报告。整个过程不需要写任何代码。
+```
+请帮我安装这个 Skill：https://github.com/gtskevin/ob-reference-check
+安装后告诉我它能做什么。
+```
 
-### 方式二：手动安装
+**方式二：GitHub CLI**
 
-<details>
-<summary>Claude Code / Codex / Gemini CLI（点击展开）</summary>
+```bash
+# Claude Code
+gh skill install gtskevin/ob-reference-check ob-reference-check --agent claude-code --scope user
+
+# Codex
+gh skill install gtskevin/ob-reference-check ob-reference-check --agent codex --scope user
+```
+
+**方式三：手动安装**
 
 ```bash
 git clone https://github.com/gtskevin/ob-reference-check.git
 # Claude Code
 cp -r ob-reference-check/ob-reference-check ~/.claude/skills/
-# OpenAI Codex
+# Codex
 cp -r ob-reference-check/ob-reference-check ~/.codex/skills/
 ```
 
-或只下载核心文件（不 clone 整个仓库）：
+<a id="manual-run"></a>
+
+**不想用 AI 助手？** 脚本可以独立跑完机械检查（8 类中的 6 类），只需 Python 3.9+：
 
 ```bash
-mkdir -p ~/.claude/skills/ob-reference-check/scripts
-curl -sL https://raw.githubusercontent.com/gtskevin/ob-reference-check/main/ob-reference-check/SKILL.md -o ~/.claude/skills/ob-reference-check/SKILL.md
-curl -sL https://raw.githubusercontent.com/gtskevin/ob-reference-check/main/ob-reference-check/scripts/refcheck.py -o ~/.claude/skills/ob-reference-check/scripts/refcheck.py
-curl -sL https://raw.githubusercontent.com/gtskevin/ob-reference-check/main/ob-reference-check/scripts/requirements.txt -o ~/.claude/skills/ob-reference-check/scripts/requirements.txt
-```
-
-</details>
-
-<details>
-<summary>手动运行（不需要 AI 助手）</summary>
-
-脚本可以独立跑完机械检查（8 类中的 6 类），只需 Python 3.9+：
-
-```bash
-git clone https://github.com/gtskevin/ob-reference-check.git
 cd ob-reference-check
 python3 -m venv .venv && .venv/bin/pip install -r ob-reference-check/scripts/requirements.txt
 .venv/bin/python ob-reference-check/scripts/refcheck.py 你的论文.docx   # 也支持 .pdf / .md
 ```
 
-产出（论文同目录）：
+产出（论文同目录）：`你的论文_refcheck_YYYYMMDD.html`（初筛底稿）和 `.json`（结构化数据）。引用恰当性深查和格式一致性审查需要 AI 层判断——这正是装成 skill 的价值。想先看效果，可以直接跑内置测试论文 `tests/fixtures/test_paper.md`。
 
-- `你的论文_refcheck_YYYYMMDD.html` — 初筛底稿（自动检查结果）
-- `你的论文_refcheck_YYYYMMDD.json` — 结构化数据
+**安装完成后，告诉你的 AI 助手：**
 
-> ⚠️ 引用恰当性深查和格式一致性审查需要 AI 层判断——这正是装成 skill 的价值。想先看效果，可以直接跑内置测试论文 `tests/fixtures/test_paper.md`。
+> 「检查这篇论文的参考文献：我的论文.docx」
 
-</details>
+AI 会自动完成全部检查并打开报告。整个过程不需要写任何代码，报告语言跟随你的提问语言。
 
 ## ⚙️ 它是怎么工作的
 
@@ -166,16 +151,18 @@ python3 -m venv .venv && .venv/bin/pip install -r ob-reference-check/scripts/req
 
 ## 🤔 与其他方式对比
 
-|                  | 人工逐条核对          | 直接问 ChatGPT 等                | ob-reference-check                                                    |
-| ---------------- | --------------------- | -------------------------------- | --------------------------------------------------------------------- |
-| 假文献识别       | 能，但 100 条要数小时 | ❌ AI 凭"记忆"回答，本身就会幻觉 | ✅ 三源数据库实时检索                                                 |
-| 元数据比对       | 容易疲劳漏检          | ❌ 不联网查库时不可靠            | ✅ 逐项自动比对                                                       |
-| 引用是否支撑论述 | ✅ 需要真读原文       | 部分，但无系统流程               | ⚠️ 摘要级比对（见[已知限制](#-%E5%B7%B2%E7%9F%A5%E9%99%90%E5%88%B6)） |
-| 正文-列表对应    | ✅ 费时               | ❌ 长文本容易漏                  | ✅ 自动双向匹配                                                       |
-| 成本             | 你的一整天            | 订阅费                           | 订阅费 + 免费学术 API                                                 |
-| 可复现性         | 因人而异              | 每次回答不同                     | ✅ 脚本初筛完全可复现                                                 |
+|                  | 人工逐条核对          | 直接问 ChatGPT 等                | ob-reference-check                          |
+| ---------------- | --------------------- | -------------------------------- | ------------------------------------------- |
+| 假文献识别       | 能，但 100 条要数小时 | ❌ AI 凭"记忆"回答，本身就会幻觉 | ✅ 三源数据库实时检索                       |
+| 元数据比对       | 容易疲劳漏检          | ❌ 不联网查库时不可靠            | ✅ 逐项自动比对                             |
+| 引用是否支撑论述 | ✅ 需要真读原文       | 部分，但无系统流程               | ⚠️ 摘要级比对（见[已知限制](#limitations)） |
+| 正文-列表对应    | ✅ 费时               | ❌ 长文本容易漏                  | ✅ 自动双向匹配                             |
+| 成本             | 你的一整天            | 订阅费                           | 订阅费 + 免费学术 API                       |
+| 可复现性         | 因人而异              | 每次回答不同                     | ✅ 脚本初筛完全可复现                       |
 
 > 诚实说明：这个工具**不能替代你读原文**。恰当性判断基于摘要，标"存疑"的条目请人工读原文确认——它把需要你花时间的地方精确圈出来了。
+
+<a id="limitations"></a>
 
 ## ⚠️ 已知限制
 
@@ -186,40 +173,25 @@ python3 -m venv .venv && .venv/bin/pip install -r ob-reference-check/scripts/req
 
 ## ❓ FAQ
 
-<details>
-<summary>我的论文会被上传到哪里？</summary>
+**我的论文会被上传到哪里？**
 
 不会上传论文本身。脚本只把**单条文献的元数据**（标题/作者/年份）发送给公开学术数据库 API 做检索，正文内容在你的机器上本地解析。最终报告也是本地 HTML 文件，不存在云端。
 
-</details>
-
-<details>
-<summary>真的不需要申请 API key 吗？</summary>
+**真的不需要申请 API key 吗？**
 
 不需要。OpenAlex 和 Crossref 的公开接口完全免费。如果设置了 `OPENALEX_API_KEY` / `SEMANTIC_API_KEY` 环境变量，命中率会更高、更稳定，但纯可选项。
 
-</details>
-
-<details>
-<summary>我不是组织行为学方向的，能用吗？</summary>
+**我不是组织行为学方向的，能用吗？**
 
 能。工具本身不限学科——所有检查（存在性、元数据、对应关系、格式）对任何带参考文献列表的论文都有效。引用恰当性的判断示例偏管理/心理学的理论表述，但原理通用。
 
-</details>
-
-<details>
-<summary>检查一篇论文大概要多久/多少钱？</summary>
+**检查一篇论文大概要多久/多少钱？**
 
 脚本初筛通常几分钟内完成（取决于文献数量和网络），不消耗 AI token。AI 复核阶段消耗的 token 取决于异常条目数量——大部分文献一次查过、结论缓存复用，重复检查很便宜。
 
-</details>
-
-<details>
-<summary>AI 说某条文献"无法核实"，我该怎么办？</summary>
+**AI 说某条文献"无法核实"，我该怎么办？**
 
 报告会给出建议：通常是删除或替换该引用。如果你确信文献存在（比如非常新），点报告里的 Google Scholar 链接人工确认——报告的设计就是让你 30 秒内完成一条的人工复核。
-
-</details>
 
 ## 📄 License
 

@@ -57,7 +57,7 @@ Every category is designed around the risk it intercepts. Categories 1–6 run a
 
 ## 📊 What the report looks like
 
-After one run you get a self-contained HTML report (this example is from the built-in test paper, [which you can run yourself](#manual-run-no-ai-assistant-needed)):
+After one run you get a self-contained HTML report (this example is from the built-in test paper, [which you can run yourself](#manual-run)):
 
 <img src="assets/report-demo.png" alt="Sample final report: summary cards, 8-category scope grid, must-fix issue cards" width="800">
 
@@ -65,69 +65,54 @@ The summary cards tell you at a glance: **3 must-fix / 0 needs-review / 0 format
 
 ## 🚀 Quick Start
 
-### Method 1: Tell Your AI (Recommended)
+> ⏱️ **One-minute install, one sentence to start**
 
-Send this message to your AI coding assistant and it will install everything:
+**Option 1: Tell your AI assistant (easiest)**
 
-| Platform         | Copy this and send to your AI                                                                                    |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------- |
-| **Claude Code**  | `Install the ob-reference-check skill from https://github.com/gtskevin/ob-reference-check`                       |
-| **OpenAI Codex** | `Install the ob-reference-check skill from https://github.com/gtskevin/ob-reference-check`                       |
-| **Gemini CLI**   | `Install the ob-reference-check skill from https://github.com/gtskevin/ob-reference-check`                       |
-| **Cursor**       | Download the repo files into `.cursor/rules/`                                                                    |
-| **Windsurf**     | Download the repo files into `.windsurf/rules/`                                                                  |
-| **Other AI**     | Put the contents of [SKILL.md](ob-reference-check/SKILL.md) into your AI's custom instructions / rules directory |
+Copy-paste this to your AI assistant (works with Claude Code, Codex, Gemini CLI, and others):
 
-> 💡 **Never used a terminal?** Once installed, just say one thing to your AI:
->
-> **"Check the references in my paper: my-paper.docx"**
->
-> The AI runs the full check and opens the report. No code required.
+```
+Please install this skill for me: https://github.com/gtskevin/ob-reference-check
+Then tell me what it can do.
+```
 
-### Method 2: Manual Install
+**Option 2: GitHub CLI**
 
-<details>
-<summary>Claude Code / Codex / Gemini CLI</summary>
+```bash
+# Claude Code
+gh skill install gtskevin/ob-reference-check ob-reference-check --agent claude-code --scope user
+
+# Codex
+gh skill install gtskevin/ob-reference-check ob-reference-check --agent codex --scope user
+```
+
+**Option 3: Manual install**
 
 ```bash
 git clone https://github.com/gtskevin/ob-reference-check.git
 # Claude Code
 cp -r ob-reference-check/ob-reference-check ~/.claude/skills/
-# OpenAI Codex
+# Codex
 cp -r ob-reference-check/ob-reference-check ~/.codex/skills/
 ```
 
-Or download just the core files without cloning:
+<a id="manual-run"></a>
+
+**No AI assistant?** The script covers the mechanical checks (6 of the 8 categories) on its own; all you need is Python 3.9+:
 
 ```bash
-mkdir -p ~/.claude/skills/ob-reference-check/scripts
-curl -sL https://raw.githubusercontent.com/gtskevin/ob-reference-check/main/ob-reference-check/SKILL.md -o ~/.claude/skills/ob-reference-check/SKILL.md
-curl -sL https://raw.githubusercontent.com/gtskevin/ob-reference-check/main/ob-reference-check/scripts/refcheck.py -o ~/.claude/skills/ob-reference-check/scripts/refcheck.py
-curl -sL https://raw.githubusercontent.com/gtskevin/ob-reference-check/main/ob-reference-check/scripts/requirements.txt -o ~/.claude/skills/ob-reference-check/scripts/requirements.txt
-```
-
-</details>
-
-<details>
-<summary>Manual run (no AI assistant needed)</summary>
-
-The script covers the mechanical checks (6 of the 8 categories) on its own; all you need is Python 3.9+:
-
-```bash
-git clone https://github.com/gtskevin/ob-reference-check.git
 cd ob-reference-check
 python3 -m venv .venv && .venv/bin/pip install -r ob-reference-check/scripts/requirements.txt
 .venv/bin/python ob-reference-check/scripts/refcheck.py your-paper.docx   # also .pdf / .md
 ```
 
-Outputs (next to your paper):
+Outputs (next to your paper): `your-paper_refcheck_YYYYMMDD.html` (screening draft) and `.json` (structured data). The appropriateness deep-dive and format-consistency review need the AI layer — that's exactly the value of installing it as a skill. To preview the flow, run the built-in test paper `tests/fixtures/test_paper.md`.
 
-- `your-paper_refcheck_YYYYMMDD.html` — automated screening draft
-- `your-paper_refcheck_YYYYMMDD.json` — structured data
+**Once installed, tell your AI assistant:**
 
-> ⚠️ Appropriateness deep-dive and format-consistency review need the AI layer — that's exactly the value of installing it as a skill. To preview the flow, run the built-in test paper `tests/fixtures/test_paper.md`.
+> "Check the references in my paper: my-paper.docx"
 
-</details>
+The AI runs the full check and opens the report — no code required. The report language follows the language you ask in.
 
 ## ⚙️ How it works
 
@@ -166,16 +151,18 @@ Details worth knowing:
 
 ## 🤔 Compared to alternatives
 
-|                                    | Manual checking                  | Asking ChatGPT directly                                     | ob-reference-check                                                    |
-| ---------------------------------- | -------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------- |
-| Fake references                    | Works, but hours for 100 entries | ❌ answers from "memory" — the very thing that hallucinates | ✅ live three-source database lookup                                  |
-| Metadata comparison                | Fatigue leads to misses          | ❌ unreliable without live lookup                           | ✅ automatic field-by-field comparison                                |
-| Does the source support the claim? | ✅ requires reading the paper    | Partial, no systematic flow                                 | ⚠️ abstract-level comparison (see [limitations](#-known-limitations)) |
-| Text–list correspondence           | ✅ tedious                       | ❌ misses things in long text                               | ✅ automatic bidirectional matching                                   |
-| Cost                               | A full day of yours              | Subscription                                                | Subscription + free academic APIs                                     |
-| Reproducibility                    | Varies by person                 | Different every time                                        | ✅ script screening is fully reproducible                             |
+|                                    | Manual checking                  | Asking ChatGPT directly                                     | ob-reference-check                                             |
+| ---------------------------------- | -------------------------------- | ----------------------------------------------------------- | -------------------------------------------------------------- |
+| Fake references                    | Works, but hours for 100 entries | ❌ answers from "memory" — the very thing that hallucinates | ✅ live three-source database lookup                           |
+| Metadata comparison                | Fatigue leads to misses          | ❌ unreliable without live lookup                           | ✅ automatic field-by-field comparison                         |
+| Does the source support the claim? | ✅ requires reading the paper    | Partial, no systematic flow                                 | ⚠️ abstract-level comparison (see [limitations](#limitations)) |
+| Text–list correspondence           | ✅ tedious                       | ❌ misses things in long text                               | ✅ automatic bidirectional matching                            |
+| Cost                               | A full day of yours              | Subscription                                                | Subscription + free academic APIs                              |
+| Reproducibility                    | Varies by person                 | Different every time                                        | ✅ script screening is fully reproducible                      |
 
 > Honest note: this tool **does not replace reading the source papers yourself**. Appropriateness judgments are abstract-level; entries flagged "needs review" deserve a human read. What it does is pinpoint exactly where your time is best spent.
+
+<a id="limitations"></a>
 
 ## ⚠️ Known limitations
 
@@ -186,40 +173,25 @@ Details worth knowing:
 
 ## ❓ FAQ
 
-<details>
-<summary>Does my paper get uploaded anywhere?</summary>
+**Does my paper get uploaded anywhere?**
 
 No. The script only sends **individual reference metadata** (title/authors/year) to public academic database APIs for lookup; your manuscript is parsed locally. The final report is a local HTML file — nothing is stored in the cloud.
 
-</details>
-
-<details>
-<summary>Do I really not need API keys?</summary>
+**Do I really not need API keys?**
 
 Correct. OpenAlex and Crossref public endpoints are free. Setting `OPENALEX_API_KEY` / `SEMANTIC_API_KEY` environment variables improves hit rate and stability, but is purely optional.
 
-</details>
-
-<details>
-<summary>I'm not in organizational behavior — can I still use it?</summary>
+**I'm not in organizational behavior — can I still use it?**
 
 Yes. The checks (existence, metadata, correspondence, format) work for any paper with a reference list. The appropriateness examples lean toward management/psychology phrasing, but the method is general.
 
-</details>
-
-<details>
-<summary>How long / how expensive is a run?</summary>
+**How long / how expensive is a run?**
 
 Script screening typically finishes in minutes (depending on reference count and network) and costs zero AI tokens. The AI review stage costs tokens proportional to the number of anomalies — most references verify once and are cached, so re-checks are cheap.
 
-</details>
-
-<details>
-<summary>The AI says a reference "could not be verified" — now what?</summary>
+**The AI says a reference "could not be verified" — now what?**
 
 The report suggests a fix: usually delete or replace the citation. If you're confident the paper exists (e.g., it's very recent), click the Google Scholar link in the report to confirm manually — the report is designed so each manual re-check takes about 30 seconds.
-
-</details>
 
 ## 📄 License
 
