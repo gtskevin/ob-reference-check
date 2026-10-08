@@ -200,3 +200,19 @@ The report suggests a fix: usually delete or replace the citation. If you're con
 ## 🙏 Acknowledgments
 
 Data sources: [OpenAlex](https://openalex.org) · [Crossref](https://www.crossref.org) · [Semantic Scholar](https://www.semanticscholar.org)
+
+## Update checks and migration
+
+Starting with v1.4.0, invoking the skill checks the version published on GitHub; standalone checker runs also announce newer versions. Successful results are cached for 24 hours, failures for one hour. Offline runs make no update requests. Only a public version manifest is retrieved; manuscript content is never uploaded for this check.
+
+A newer version produces a notice with the installed version, latest version, and repository link. Update the whole skill through your original installation method after confirming. Installed files are never automatically overwritten. To check immediately:
+
+```bash
+python3 <skill-directory>/scripts/check_update.py --force
+```
+
+Older installations lack this code and need one manual upgrade to v1.4.0 or later before future invocations can offer update notices.
+
+v1.4.0 includes explicit review coverage, cache and citation-matching fixes, and version binding between the manuscript, screening data, and review verdicts. Unperformed checks stay visible. Future publication years can reflect scheduled issues and do not prove nonexistence. Tables, footnotes, formatting, and claim support still require appropriate source evidence.
+
+Rescreen legacy data without a source fingerprint. Create a bound empty review template with `refcheck.py --prepare-final <screening-json> --final <new-final-json>`, then recheck and migrate applicable verdicts. Do not add fingerprints merely to bypass review.

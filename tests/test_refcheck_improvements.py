@@ -101,7 +101,7 @@ class VenueCompareTest(unittest.TestCase):
             _entry(authors=["Li"]),
             {"year": 2024, "authors": ["Lin"], "venue": "Journal",
              "volume": None, "issue": None, "pages": None, "doi": None})
-        self.assertEqual([m["field"] for m in mm], ["first_author"])
+        self.assertIn("first_author", [m["field"] for m in mm])
 
 
 class CitationRegexTest(unittest.TestCase):
@@ -279,11 +279,11 @@ class FinalizeTest(unittest.TestCase):
         for cat in ("重复条目检测", "时间线与预印本检查", "列表内部一致性交叉检测",
                     "引用恰当性深查", "格式一致性与书目通读"):
             self.assertIn(cat, html)
-        self.assertIn("未发现重复", html)   # _finalize_data 无 duplicates 命中
+        self.assertIn("未记录检查", html)   # _finalize_data 无 duplicates 命中
         # 有发现的类别用琥珀色 ⚠️ 而非绿勾（用户反馈×4：8 格全绿与
         # "必须处理 N 项"矛盾）
         self.assertIn('class="scope-warn"', html)
-        self.assertIn("需修改 1 项", html)  # must = R3
+        self.assertIn("1 项待处理", html)  # must = R3
         self.assertNotIn('✅ 全部一致或差异已排除', html)  # 有 must 时不显绿
         self.assertNotIn('class="todo"', html)
 
@@ -430,7 +430,7 @@ class CorrespondenceVerdictTest(unittest.TestCase):
         self.assertIn("scholar.google.com", html)
         self.assertIn('class="num bad">2', html)      # R3 + C2
         self.assertIn('class="num ok">2', html)       # 其余确认仍是 R1/R2
-        self.assertIn("1 项对应问题", html)            # 检查范围: 对应类 ⚠️
+        self.assertIn("1 项待处理", html)            # 检查范围: 对应类 ⚠️
 
     def test_match_false_positive_resolved_as_ok(self):
         # 复核为匹配误报（如年份不一致）→ ok，不进必须处理

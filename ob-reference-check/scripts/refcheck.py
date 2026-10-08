@@ -5,7 +5,8 @@ ob-reference-check — 论文参考文献系统检查（机械层）
 用法:
     python refcheck.py <论文文件 .docx/.pdf/.md> [选项]
     python refcheck.py --verify-doi R7,R16 <论文文件或 *_refcheck_*.json>
-    python refcheck.py --finalize <论文文件或 *_refcheck_*.json> [--final xx.json]
+    python refcheck.py --prepare-final <*_refcheck_*.json> [--final xx.json]
+    python refcheck.py --finalize <论文文件或 *_refcheck_*.json> [--final xx.json] [--source 稿件]
 
 做什么（脚本层，零 LLM token）:
     1. 解析 Word / PDF / Markdown 三种格式
@@ -18,7 +19,7 @@ ob-reference-check — 论文参考文献系统检查（机械层）
     6. 生成自包含 HTML 初筛底稿（默认不打开）+ .json 数据文件（供人工复核）
     7. --verify-doi: 批量 DOI 直查（替代人工逐条检索）
     8. --finalize: 读 Claude 复核结论 final.json，数据驱动渲染最终报告
-       （复核结论按 DOI 持久化，下次运行自动回流为 prior_verdict）
+       （带证据的书目结论按条目指纹保存，下次运行可作为 prior_verdict）
 
 不做什么:
     - 引用恰当性判断（层 3）→ 由 Claude 读 .json 中的句子+摘要完成
@@ -46,7 +47,7 @@ CACHE_DIR = os.path.expanduser("~/.reference_check/cache")
 USER_AGENT = "ob-reference-check/1.0 (mailto:ob-refcheck@example.com)"
 
 # 语义化版本（发布到 GitHub 后供更新检查比对；详见 SKILL.md 分发说明）
-__version__ = "1.1.0"
+__version__ = "1.4.0"
 
 # ---------------------------------------------------------------------------
 # 1. 文档解析（三格式 → 段落列表，每段带 heading 信息）
@@ -198,9 +199,10 @@ def parse_entry(raw, idx):
         e["doi"] = m.group(1).rstrip(".")
 
     # 年份: 优先 (2020) / (2020a)，其次任意 4 位年份
-    ym = re.search(r"[ (.](\d{4})[a-z]?[).,]", raw + " ")
+    ym = re.search(r"[ (.](\d{4})([a-z]?)[).,]", raw + " ")
     if ym:
         e["year"] = int(ym.group(1))
+        e["year_suffix"] = ym.group(2)
     else:
         ym2 = re.search(r"\b(19|20)\d{2}\b", raw)
         if ym2:
@@ -303,7 +305,7 @@ def extract_citations(body_paragraphs):
     """返回 list[citation dict]。body_paragraphs 不含参考文献列表部分。"""
     citations = []
     section = "正文"
-    for p in body_paragraphs:
+    for paragraph_index, p in enumerate(body_paragraphs, 1):
         if p["heading"]:
             section = p["heading"]
             continue
@@ -333,25 +335,25 @@ def extract_citations(body_paragraphs):
                         continue
                     for y in years:
                         found.append({"authors": surnames, "year": y,
-                                      "raw": part, "narrative": False})
+                                      "raw": part, "narrative": False,
+                                      "group_size": len(parts)})
             for m in NARR_CITE.finditer(sent):
                 surnames = _surnames_from_inline(m.group(1))
                 found.append({"authors": surnames, "year": m.group(2),
-                              "raw": f"{m.group(1)} ({m.group(2)})", "narrative": True})
+                              "raw": f"{m.group(1)} ({m.group(2)})", "narrative": True,
+                              "group_size": 1})
             for c in found:
                 c["sentence"] = sent
                 c["section"] = section
+                c["locator"] = p.get("locator") or f"正文段落 {paragraph_index}"
                 citations.append(c)
 
-    # 分诊: C 类=单括号内 ≥3 条并排; A 类=句子含假设/理论论证标记; B 类=其余
+    # 承重角色优先；并引数量只作分组提示，C 类仍需轻查。
     for c in citations:
-        sent = c["sentence"]
-        pm = PAREN_CITE.search(sent)
-        n_group = len(CITE_SPLIT.split(pm.group(1))) if pm else 1
-        if n_group >= 3:
-            c["triage"] = "C"
-        elif HYPOTHESIS_MARKERS.search(sent):
+        if HYPOTHESIS_MARKERS.search(c["sentence"]):
             c["triage"] = "A"
+        elif c["group_size"] >= 3:
+            c["triage"] = "C"
         else:
             c["triage"] = "B"
     return citations
@@ -462,29 +464,48 @@ class Verifier:
     def verify(self, entry):
         """返回 {status, confidence, source, record, mismatches, links, abstract}"""
         title = entry.get("title") or ""
-        # Bump the cache namespace when parsing rules change; otherwise a
-        # corrected author/DOI/title parse could keep stale mismatches.
-        # v4: 标题定界认 ?/!、tail 剥 URL、无期号卷号模式、venue 词级比对
-        key = "v5:" + re.sub(r"\W+", " ", title.lower()).strip()[:200]
+        # 缓存文献记录，不复用相对于旧稿的字段差异。身份变化重新检索。
+        identity = {"title": title.casefold(), "doi": (entry.get("doi") or "").lower(),
+                    "authors": entry.get("authors")}
+        key = "v6:" + json.dumps(identity, ensure_ascii=False, sort_keys=True)
         cached = self._cache_get(key)
-        if cached and self.offline:
-            return cached["data"]
+        if cached and (self.offline or not self._stale(cached)):
+            self.stats["cache_hit"] += 1
+            result = dict(cached["data"])
+            if result.get("status") == "found" and result.get("record"):
+                result = self._found_result(entry, result["record"])
+            result.setdefault("mismatches", [])
+            result.setdefault("links", self._search_links(entry))
+            if self._stale(cached):
+                result["cache_stale"] = True
+                result["note"] = "离线使用过期缓存，须重新核实"
+            return result
         if self.offline:
             return self._unverified(entry, "离线模式且无缓存")
-        if cached and not self._stale(cached):
-            self.stats["cache_hit"] += 1
-            return cached["data"]
-
         result = self._verify_online(entry, title)
         if result.get("status") != "error":
-            self._cache_put(key, result)
+            cache_data = dict(result)
+            for field in ("mismatches", "confidence", "links"):
+                cache_data.pop(field, None)
+            self._cache_put(key, cache_data)
         return result
 
     @staticmethod
     def _stale(cached):
-        age = (datetime.date.today()
-               - datetime.date.fromisoformat(cached["cached_at"])).days
-        return age > 180  # 半年后允许刷新（收录延迟 / 更正）
+        try:
+            age = (datetime.date.today()
+                   - datetime.date.fromisoformat(cached["cached_at"])).days
+        except (KeyError, ValueError, TypeError):
+            return True
+        ttl = 180 if cached.get("data", {}).get("status") == "found" else 1
+        return age > ttl
+
+    def _found_result(self, entry, rec):
+        mismatches = _compare_metadata(entry, rec)
+        return {"status": "found", "confidence": "medium" if mismatches else "high",
+                "source": rec.get("_source"), "record": rec,
+                "mismatches": mismatches, "links": self._record_links(rec, entry),
+                "abstract": rec.get("abstract")}
 
     def _verify_online(self, entry, title):
         if not title or len(title) < 8:
@@ -528,11 +549,7 @@ class Verifier:
                     "mismatches": [], "links": self._search_links(entry),
                     "abstract": None,
                     "note": "自动检索未匹配，必须人工复核；不能据此断言为编造或真实缺失"}
-        mismatches = _compare_metadata(entry, rec)
-        return {"status": "found", "confidence": "medium" if mismatches else "high",
-                "source": rec["_source"], "record": rec,
-                "mismatches": mismatches, "links": self._record_links(rec, entry),
-                "abstract": rec.get("abstract")}
+        return self._found_result(entry, rec)
 
     def _search_openalex(self, title, entry):
         if self._openalex_dead:
@@ -842,6 +859,14 @@ def _compare_metadata(entry, rec):
             if pl != dl:
                 out.append({"field": field, "paper": p, "database": d})
             return
+        if field in ("volume", "issue"):
+            if pl.isdigit() and dl.isdigit():
+                same = int(pl) == int(dl)
+            else:
+                same = pl == dl
+            if not same:
+                out.append({"field": field, "paper": p, "database": d})
+            return
         if pl in dl or dl in pl:
             return  # 简称/缩写容差（如 "Human Factors" ⊂ 数据库全称）
         sim = difflib.SequenceMatcher(None, pl, dl).ratio()
@@ -849,6 +874,18 @@ def _compare_metadata(entry, rec):
             out.append({"field": field, "paper": p, "database": d})
 
     add("year", entry["year"], rec["year"])
+    normalize_title = lambda text: re.sub(r"[\W_]+", " ", str(text or "").casefold()).strip()
+    if entry.get("title") and rec.get("title"):
+        if normalize_title(entry["title"]) != normalize_title(rec["title"]):
+            out.append({"field": "title", "paper": entry["title"],
+                        "database": rec["title"], "level": "near"})
+    # 数据库可能提供全名；姓氏序列的差异交人工确认，不能直接判错。
+    surname = lambda name: re.sub(r"\W+", "", name.split()[-1].casefold()) if name.split() else ""
+    pa = [surname(a) for a in entry.get("authors") or []]
+    da = [surname(a) for a in rec.get("authors") or []]
+    if pa and da and pa != da:
+        out.append({"field": "authors", "paper": entry["authors"],
+                    "database": rec["authors"], "level": "near"})
     # 第一作者姓氏
     first_db = (rec.get("authors") or [""])[0].split()[-1] if rec.get("authors") else ""
     first_paper = entry["authors"][0].split()[-1] if entry.get("authors") else ""
@@ -871,40 +908,48 @@ def _compare_metadata(entry, rec):
 # 5. 机械检查: 对应 / 重复 / 时间线 / preprint
 # ---------------------------------------------------------------------------
 
+def _author_key(name):
+    return re.sub(r"\W+", "", name.split()[-1].casefold()) if name.split() else ""
+
+
 def entry_key(e):
-    # 年份统一为字符串，避免 int/str 元组不匹配
-    first = e["authors"][0] if e["authors"] else ""
-    # In-text citations reduce compound surnames such as "Van Dyne" to the
-    # final surname token; use the same comparison key for the reference list.
-    first = first.split()[-1] if first.split() else ""
-    return (re.sub(r"\W+", "", first.lower()),
-            str(e["year"]) if e["year"] else None)
+    first = (e.get("authors") or [""])[0]
+    year = str(e.get("year") or "") + e.get("year_suffix", "")
+    return (_author_key(first), year)
 
 
 def check_correspondence(entries, citations):
-    entry_keys = {}
-    for e in entries:
-        entry_keys.setdefault(entry_key(e), []).append(e["id"])
-
-    cited_keys = set()
-    unmatched_citations = []
+    cited_ids, uncertain_ids = set(), set()
+    unmatched, ambiguous = [], []
     for i, c in enumerate(citations):
-        # C 编号 = citations 下标+1，final.json 的 citation 型 verdict 用它做 id
         c["cid"] = f"C{i + 1}"
-        matched = None
-        cyear = c["year"].rstrip("abcdefghij")
-        for surname in c["authors"]:
-            if (re.sub(r"\W+", "", surname.lower()), cyear) in entry_keys:
-                matched = (re.sub(r"\W+", "", surname.lower()), cyear)
-                break
-        if matched:
-            cited_keys.add(matched)
+        c["ref_ids"] = []
+        c["candidate_ref_ids"] = []
+        first = _author_key((c.get("authors") or [""])[0])
+        year = str(c.get("year") or "")
+        candidates = [e for e in entries if entry_key(e) == (first, year)]
+        # 未写后缀时保留候选，不把同年多条一并标作已引用。
+        if not candidates and year.isdigit():
+            candidates = [e for e in entries if entry_key(e)[0] == first
+                          and str(e.get("year")) == year]
+        if len(candidates) > 1 and len(c.get("authors", [])) > 1:
+            authors = [_author_key(a) for a in c["authors"]]
+            narrowed = [e for e in candidates if [_author_key(a) for a in e.get("authors", [])] == authors]
+            if narrowed:
+                candidates = narrowed
+        if len(candidates) == 1:
+            c["ref_ids"] = [candidates[0]["id"]]
+            cited_ids.update(c["ref_ids"])
+        elif candidates:
+            c["candidate_ref_ids"] = [e["id"] for e in candidates]
+            uncertain_ids.update(c["candidate_ref_ids"])
+            ambiguous.append(c)
         else:
-            unmatched_citations.append(c)
-
-    uncited = [e["id"] for e in entries if entry_key(e) not in cited_keys]
-    return {"cited_but_missing_in_list": unmatched_citations,
-            "listed_but_never_cited": uncited}
+            unmatched.append(c)
+    return {"cited_but_missing_in_list": unmatched,
+            "ambiguous_citations": ambiguous,
+            "listed_but_never_cited": [e["id"] for e in entries
+                                       if e["id"] not in cited_ids | uncertain_ids]}
 
 
 def check_duplicates(entries):
@@ -932,7 +977,7 @@ def check_timeline(entries, today=None):
     for e in entries:
         if e["year"] and e["year"] > today.year:
             issues.append({"id": e["id"],
-                           "issue": f"出版年份 {e['year']} 晚于当前年份，不可能存在"})
+                           "issue": f"出版年份 {e['year']} 晚于当前年份，需核实是否为预排卷期或年份笔误"})
     return issues
 
 
@@ -1583,6 +1628,122 @@ def save_verdict_store(store):
     os.replace(tmp, VERDICT_STORE)
 
 
+CHECK_TITLES = {
+    'existence': '文献存在性核验', 'metadata': '书目元数据逐项比对',
+    'correspondence': '正文引用 — 文献列表对应', 'duplicates': '重复条目检测',
+    'timeline': '时间线与预印本检查', 'cross_checks': '列表内部一致性交叉检测',
+    'appropriateness': '引用恰当性深查', 'format': '格式一致性与书目通读',
+}
+
+
+def verdict_check(v):
+    return v.get('check') or {'bibliography': 'metadata'}.get(
+        v.get('category', 'bibliography'), v.get('category', 'bibliography'))
+
+
+def _entry_fingerprint(entry):
+    fields = ('raw', 'authors', 'year', 'year_suffix', 'title', 'venue',
+              'volume', 'issue', 'pages', 'doi')
+    value = {k: entry.get(k) for k in fields}
+    return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
+def updated_verdict_store(store, data, verdicts):
+    """Only entry-bound bibliography/format judgments may be reused; never claim support."""
+    updated = dict(store)
+    for e in data['entries']:
+        doi = (e.get('doi') or '').lower().rstrip('.')
+        related = [v for v in verdicts if v['id'] == e['id']
+                   and v.get('category', 'bibliography') in ('bibliography', 'format')
+                   and verdict_check(v) in ('existence', 'metadata', 'format')]
+        if doi and related:
+            updated[doi] = {'schema_version': 2, 'entry_fingerprint': _entry_fingerprint(e),
+                            'verdicts': related, 'date': datetime.date.today().isoformat()}
+    return updated
+
+
+def prior_verdict_for(entry, store):
+    value = store.get((entry.get('doi') or '').lower().rstrip('.'))
+    if not isinstance(value, dict) or value.get('schema_version') != 2:
+        return None
+    if value.get('entry_fingerprint') != _entry_fingerprint(entry):
+        return None
+    try:
+        if (datetime.date.today() - datetime.date.fromisoformat(value['date'])).days > 180:
+            return None
+    except (KeyError, ValueError, TypeError):
+        return None
+    # R numbers are local to a manuscript, not reusable identity.
+    return dict(value, verdicts=[dict(v, id=entry['id']) for v in value['verdicts']])
+
+
+def _check_total(data, check):
+    if check == 'appropriateness':
+        return len(data.get('citations', []))
+    if check == 'correspondence':
+        return len(data['entries']) + len(data.get('citations', []))
+    return len(data['entries'])
+
+
+def _required_dispositions(data, check):
+    """Return IDs needing explicit decisions in this check, including cleared alarms."""
+    issues = []
+    if check == 'duplicates':
+        issues = data.get('duplicates', [])
+    elif check == 'timeline':
+        issues = data.get('timeline', []) + data.get('preprints', [])
+    elif check == 'cross_checks':
+        issues = [x for xs in data.get('cross_checks', {}).values() for x in xs]
+    elif check == 'correspondence':
+        corr = data.get('correspondence', {})
+        issues = [{'id': c.get('cid') or _citation_cid(data.get('citations', []), c)}
+                  for c in corr.get('cited_but_missing_in_list', []) + corr.get('ambiguous_citations', [])]
+        issues += [{'id': eid} for eid in corr.get('listed_but_never_cited', [])]
+    elif check in ('existence', 'metadata'):
+        for e in data['entries']:
+            r = data.get('verification', {}).get(e['id'], {})
+            if ((check == 'existence' and (r.get('status') != 'found' or r.get('cache_stale')))
+                    or (check == 'metadata' and (r.get('mismatches') or e.get('parse_ok') is False))):
+                issues.append({'id': e['id']})
+    return {eid for issue in issues for eid in issue.get('ids', [issue.get('id')]) if eid}
+
+
+def _validate_checks(data, verdicts, checks):
+    if not isinstance(checks, dict):
+        sys.exit('[错误] checks 必须是对象')
+    errors = []
+    for check, state in checks.items():
+        if check not in CHECK_TITLES or not isinstance(state, dict):
+            errors.append(f'{check}: 未知检查维度或状态结构无效')
+            continue
+        status = state.get('status')
+        total = _check_total(data, check)
+        reviewed = state.get('reviewed', 0)
+        if status not in ('completed', 'partial', 'not_run', 'blocked'):
+            errors.append(f'{check}: 无效状态')
+        if type(reviewed) is not int or not 0 <= reviewed <= total:
+            errors.append(f'{check}: reviewed 须在 0..{total} 之间')
+        if status in ('completed', 'partial', 'blocked') and not state.get('note'):
+            errors.append(f'{check}: 必须记录检查依据或限制 note')
+        if status == 'not_run' and reviewed != 0:
+            errors.append(f'{check}: 未检查时 reviewed 必须为 0')
+        if check == 'appropriateness':
+            reviewed_ids = {v['id'] for v in verdicts if verdict_check(v) == check and _is_cid(v['id'])}
+            if reviewed != len(reviewed_ids):
+                errors.append(f'{check}: reviewed 必须等于逐处引用结论数 {len(reviewed_ids)}')
+        if status == 'completed':
+            if reviewed != total:
+                errors.append(f'{check}: 完成状态须覆盖 {total} 项')
+            resolved = {v['id'] for v in verdicts if verdict_check(v) == check}
+            missing = _required_dispositions(data, check) - resolved
+            if missing:
+                errors.append(f'{check}: 异常缺少本维度结论 {sorted(missing)}')
+            # A completed check may contain unresolved findings; it means the work
+            # was performed, not that the bibliography is correct.
+    if errors:
+        sys.exit('[错误] 检查范围校验失败:\n  - ' + '\n  - '.join(errors))
+
+
 def _validate_verdicts(entries, verification, verdicts,
                        citations=None, correspondence=None):
     r"""final.json 校验（F5: warn/info 结论必须带证据，防未查库断言）。
@@ -1593,15 +1754,46 @@ def _validate_verdicts(entries, verification, verdicts,
     """
     by_id = {e["id"]: e for e in entries}
     citations = citations or []
-    errors, seen, seen_cid = [], set(), set()
+    errors, seen_cid = [], set()
+    unique = set()
+    seen_checks = set()
     for v in verdicts:
         vid = v.get("id")
+        category = v.get("category", "bibliography")
+        check = verdict_check(v)
+        if category not in ("bibliography", "correspondence", "appropriateness", "format") or check not in CHECK_TITLES:
+            errors.append(f"{vid}: 未知 category/check")
+        allowed = {"bibliography": {"existence", "metadata", "duplicates", "timeline", "cross_checks"},
+                   "correspondence": {"correspondence"}, "appropriateness": {"appropriateness"}, "format": {"format"}}
+        if check not in allowed.get(category, set()):
+            errors.append(f"{vid}: category 与 check 不一致")
+        key = (vid, check, v.get("ref_id"))
+        if key in unique:
+            errors.append(f"{vid}: 同一检查维度重复结论")
+        unique.add(key)
+        seen_checks.add((vid, check))
+        if category == "appropriateness":
+            if not _is_cid(vid):
+                errors.append(f"{vid}: 恰当性结论必须绑定 C 编号")
+            if v.get("ref_id") not in by_id and v.get("final_status") != "info":
+                errors.append(f"{vid}: 恰当性结论必须指定有效 ref_id")
+            citation = _citation_by_cid(citations, vid) if _is_cid(vid) else None
+            if citation and citation.get("ref_ids") and v.get("ref_id") not in citation["ref_ids"]:
+                errors.append(f"{vid}: ref_id 与本次引用对应关系不一致，先修正对应记录")
+            if not v.get("evidence"):
+                errors.append(f"{vid}: 恰当性结论必须有证据，即使为 ok")
+            if v.get("final_status") == "ok" and v.get("evidence_level") not in ("abstract", "full_text"):
+                errors.append(f"{vid}: 支撑结论须注明 evidence_level=abstract/full_text")
+            if v.get("final_status") == "ok" and v.get("evidence_level") == "abstract":
+                if not (verification.get(v.get("ref_id"), {}).get("abstract") or v.get("source_excerpt")):
+                    errors.append(f"{vid}: 摘要为空，不能判定支撑")
         if _is_cid(vid):
             if _citation_by_cid(citations, vid) is None:
                 errors.append(f"{vid}: 不存在于正文引用"
                               f"（citations 共 {len(citations)} 处）")
                 continue
-            seen_cid.add(vid)
+            if category == "correspondence":
+                seen_cid.add(vid)
             if v.get("final_status") not in FINAL_ICON:
                 errors.append(f"{vid}: final_status 必须是 ok/warn/info，"
                               f"当前 {v.get('final_status')!r}")
@@ -1614,7 +1806,6 @@ def _validate_verdicts(entries, verification, verdicts,
         if vid not in by_id:
             errors.append(f"{vid}: 不存在于文献列表")
             continue
-        seen.add(vid)
         if v.get("final_status") not in FINAL_ICON:
             errors.append(f"{vid}: final_status 必须是 ok/warn/info，"
                           f"当前 {v.get('final_status')!r}")
@@ -1624,28 +1815,36 @@ def _validate_verdicts(entries, verification, verdicts,
                     errors.append(f"{vid}: {k} 为必填"
                                   f"（warn/info 结论必须带证据与行动项）")
     for e in entries:
-        if e["id"] in seen:
-            continue
-        r = verification.get(e["id"], {})
-        if r.get("status") in ("not_found", "unverified") or r.get("mismatches"):
-            errors.append(f"{e['id']}: 自动初筛有异常"
-                          f"（status={r.get('status')}, "
-                          f"{len(r.get('mismatches') or [])} 项差异），"
-                          f"必须有显式复核结论")
+        eid = e["id"]
+        r = verification.get(eid, {})
+        required = []
+        if r.get("status") in ("not_found", "unverified") or r.get("cache_stale"):
+            required.append("existence")
+        if r.get("mismatches") or e.get("parse_ok") is False:
+            required.append("metadata")
+        for check in required:
+            # Legacy bibliography verdicts can resolve an existence alarm only
+            # when they do not explicitly claim to be a different check.
+            legacy = check == "existence" and any(
+                v.get("id") == eid and "check" not in v
+                and v.get("category", "bibliography") == "bibliography" for v in verdicts)
+            if (eid, check) not in seen_checks and not legacy:
+                errors.append(f"{eid}: {check} 自动异常必须有本维度显式复核结论")
     # 每条"正文引用但列表缺失"必须有显式结论（同"自动异常必须有结论"规则）：
     # 确认缺失→warn；复核为匹配误报（年份不一致/拼写差异等）→ok
-    for c in (correspondence or {}).get("cited_but_missing_in_list", []):
+    for c in ((correspondence or {}).get("cited_but_missing_in_list", [])
+              + (correspondence or {}).get("ambiguous_citations", [])):
         cid = c.get("cid") or _citation_cid(citations, c)
         if not cid or cid in seen_cid:
             continue
         who = f"({', '.join(c.get('authors', []))}, {c.get('year')})"
-        errors.append(f"{cid}: 正文引用 {who} 在列表中无对应条目，"
+        errors.append(f"{cid}: 正文引用 {who} 缺失或存在歧义，"
                       f"必须有显式结论（确认缺失→warn；匹配误报→ok）")
     if errors:
         sys.exit("[错误] final.json 校验失败:\n  - " + "\n  - ".join(errors))
 
 
-def build_final_report(data, verdicts):
+def build_final_report(data, verdicts, checks=None):
     """按复核结论渲染最终报告（P1-1~4 信息架构）。
 
     - 概览只留行动导向卡片，无重复段落文字（P1-1）
@@ -1662,7 +1861,16 @@ def build_final_report(data, verdicts):
     today = datetime.date.today().isoformat()
     stem = os.path.splitext(os.path.basename(data["paper"]["path"]))[0]
 
-    vmap = {v["id"]: v for v in verdicts}
+    checks = checks or {}
+    complete = all(checks.get(k, {}).get("status") == "completed" for k in CHECK_TITLES)
+    review_label = "检查记录完整" if complete else "部分检查 / 完成记录不全"
+    # 多维结论取最高风险，不让后写入的 ok 覆盖警告。
+    vmap = {}
+    rank = {"ok": 0, "info": 1, "warn": 2}
+    for v in verdicts:
+        old = vmap.get(v["id"])
+        if old is None or rank[v["final_status"]] > rank[old["final_status"]]:
+            vmap[v["id"]] = v
 
     def cat(v):
         return v.get("category", "bibliography")
@@ -1683,12 +1891,18 @@ def build_final_report(data, verdicts):
         if c is None:
             return ""
         who = f"{', '.join(c.get('authors') or [])}, {c.get('year')}"
+        context_label = (f"对应文献 {v.get('ref_id') or '待确认'}"
+                         if cat(v) == "appropriateness" else ("文献列表中无对应条目" if any(
+                             (item.get("cid") or _citation_cid(citations, item)) == v["id"]
+                             for item in data.get("correspondence", {}).get("cited_but_missing_in_list", []))
+                               else "对应关系待核对"))
+        locator = c.get("locator") or c.get("section") or "正文位置未记录"
         scholar = ("https://scholar.google.com/scholar?q="
                    + urllib.parse.quote(who))
         return f"""<div class="item {level}">
 <h3>{_badge(v['id'], level)} {esc(v.get('verdict') or '')}</h3>
 <p class="muted">“{esc((c.get('sentence') or '')[:150])}”</p>
-<p class="muted">→ 引用（{esc(who)}），文献列表中无对应条目</p>
+<p class="muted">→ 引用（{esc(who)}），{esc(context_label)} · {esc(locator)}</p>
 <p><b>建议：</b>{esc(v.get('action') or '')}</p>
 <p class="muted">依据：{esc(v.get('evidence') or '')}</p>
 <p>复核：{_links_html({'google_scholar': scholar})}</p>
@@ -1724,7 +1938,6 @@ def build_final_report(data, verdicts):
     problem_ids = {v["id"] for v in must + appro + fmt + check}
     # "其余确认"按条目计数——C 编号 verdict 的主体不在列表里，
     # 不应折减条目确认数（2026-08-28 缺口修复）
-    n_problem = sum(1 for pid in problem_ids if not _is_cid(pid))
     rows_problem, rows_ok = [], []
     for e in entries:
         eid = e["id"]
@@ -1732,13 +1945,14 @@ def build_final_report(data, verdicts):
         r = results.get(eid, {})
         desc = esc(e["raw"][:90] + ("…" if len(e["raw"]) > 90 else ""))
         links = _links_html(_final_links(r, e))
-        st = v["final_status"] if v else "ok"
+        st = v["final_status"] if v else "info"
         badge = _badge(FINAL_ICON[st], st)
         row = (f'<tr><td>{esc(eid)}</td><td class="ref-text">{desc}</td>'
                f'<td>{badge}</td><td>{links}</td></tr>')
         (rows_problem if eid in problem_ids else rows_ok).append(row)
 
     n_a = sum(1 for c in citations if c.get("triage") == "A")
+    n_confirmed = sum(1 for v in vmap.values() if not _is_cid(v["id"]) and v["final_status"] == "ok")
     caps = data.get("summary_stats", {}).get("source_capabilities", {})
 
     nav = ['<a href="#overview">总览</a>', '<a href="#scope">检查范围</a>']
@@ -1759,9 +1973,9 @@ def build_final_report(data, verdicts):
 <header class="paper">
   <div class="eyebrow">Reference integrity review · final</div>
   <h1>参考文献检查报告</h1>
-  <div class="meta">{esc(stem)} ｜ 定稿 {today} ｜ 已完成 AI 复核，以下为最终结论</div>
+  <div class="meta">{esc(stem)} ｜ 定稿 {today} ｜ {esc(review_label)}</div>
   <div class="context"><span>文献列表 {len(entries)} 条</span>
-  <span>正文引用 {len(citations)} 处</span><span>A 类深查 {n_a} 处</span></div>
+  <span>正文引用 {len(citations)} 处</span><span>A 类待覆盖 {n_a} 处</span></div>
 </header>
 
 <div class="report-layout">
@@ -1774,63 +1988,33 @@ def build_final_report(data, verdicts):
         (len(must), "bad" if must else "zero", "🔴 必须修改"),
         (len(appro) + len(check), "warn" if (appro or check) else "zero", "⚠️ 存疑 / 建议核对"),
         (len(fmt), "info" if fmt else "zero", "🔵 格式调整"),
-        (len(entries) - n_problem, "ok", f"✅ 其余确认（共 {len(entries)} 条）"),
+        (n_confirmed, "ok", "✅ 有通过记录（仅已检维度）"),
     ]
     for num, cls, label in cards:
         H.append(f'<div class="stat-card"><div class="num {cls}">{num}</div>'
                  f'<div class="label">{label}</div></div>')
     H.append('</div>')
 
-    # 检查范围（2026-08-28 用户反馈×2）：总览下展示完整覆盖面——8 类检查
-    # 全部列出，零命中的类别也保留（"未发现问题"本身就是信息），让用户
-    # 对检查全面性放心；不因某类没有发现就静默省略。
-    # 状态语义（2026-08-28 用户反馈×4）：绿勾只留给"未发现问题"；有发现的
-    # 类别用琥珀色 ⚠️ + 计数并指向下方卡片——否则 8 格全绿与"必须处理 N 项"
-    # 自相矛盾。
-    cross = data.get("cross_checks", {})
-    n_cross = sum(len(cross.get(k, [])) for k in
-                  ("doi_swaps", "ordering", "title_artifacts"))
-    n_dup = len(data.get("duplicates", []))
-    n_tl = len(data.get("timeline", [])) + len(data.get("preprints", []))
-    n_corr = sum(1 for v in must + check if cat(v) == "correspondence")
-
-    def scope_status(ok, warn):
-        return (f'<span class="scope-warn">{esc(warn)}</span>' if warn
-                else f'<span class="scope-ok">{esc(ok)}</span>')
-
-    scope_items = [
-        ("文献存在性核验", f"✅ 已核查 ×{len(entries)} 条", None,
-         "每条经 OpenAlex / Crossref / Semantic Scholar 检索，未命中且带 DOI 的条目逐条直查出版商记录"),
-        ("书目元数据逐项比对",
-         "✅ 全部一致或差异已排除",
-         f"⚠️ 需修改 {len(must)} 项，见下方详情" if must else None,
-         "年份 / 作者 / 期刊名 / 卷期页码 / DOI 与数据库记录逐项对照"),
-        ("正文引用 — 文献列表对应", f"✅ ×{len(citations)} 处已核对",
-         f"⚠️ {n_corr} 项对应问题，见下方详情" if n_corr else None,
-         "逐处核对正文引用是否在列表中、列表条目是否被引用，含直接引语页码后缀"),
-        ("重复条目检测", "✅ 未发现重复",
-         f"⚠️ 发现 {n_dup} 项重复" if n_dup else None,
-         "按 DOI 与标题相似度识别列表内重复文献"),
-        ("时间线与预印本检查", "✅ 未发现异常",
-         f"⚠️ {n_tl} 项提醒，见附录" if n_tl else None,
-         "未来年份 / 引用预印本但正式版可能已发表的条目"),
-        ("列表内部一致性交叉检测", "✅ 未发现异常",
-         f"⚠️ {n_cross} 项命中，见下方详情" if n_cross else None,
-         "DOI 互换错挂 / 同作者组年份排序 / 标题残留编号"),
-        ("引用恰当性深查", f"✅ A 类 {n_a} 处已核，未发现存疑",
-         f"⚠️ {len(appro)} 处存疑，见下方详情" if appro else None,
-         "对假设与理论推导处的承重引用，逐处比对文献摘要与论文论述的支撑关系；"
-         "B 类背景引用轻查主题相关性"),
-        ("格式一致性与书目通读", "✅ 未发现不一致",
-         f"⚠️ {len(fmt)} 项建议调整，见下方详情" if fmt else None,
-         "同一 style 内部统一性：et al. 规则、& / and、卷期页符号、期刊名缩写与拼写"),
-    ]
     H.append('<section id="scope" class="scope review"><h2>本次检查范围</h2>'
+             '<p class="scope-intro">完成表示已执行检查，不表示没有问题；未记录的检查不会推定通过。</p>'
              '<div class="scope-grid">')
-    for title, ok, warn, detail in scope_items:
+    for key, title in CHECK_TITLES.items():
+        state = checks.get(key, {})
+        status = state.get('status', 'not_run')
+        reviewed = state.get('reviewed', 0)
+        total = _check_total(data, key)
+        findings = [v for v in verdicts if verdict_check(v) == key and v['final_status'] != 'ok']
+        labels = {'completed': '已完成检查', 'partial': '部分完成',
+                  'not_run': '未记录检查', 'blocked': '检查受阻'}
+        kind = 'ok' if status == 'completed' and not findings else 'warn' if findings else 'info'
+        detail = f"{labels.get(status, '未记录检查')}：{reviewed}/{total}"
+        if findings:
+            detail += f"；{len(findings)} 项待处理，见下方详情"
+        elif status == 'completed':
+            detail += '；未发现问题'
         H.append(f'<div class="scope-item"><strong>{esc(title)}</strong>'
-                 f'{scope_status(ok, warn)}'
-                 f'<span>{esc(detail)}</span></div>')
+                 f'<span class="scope-{kind}">{esc(detail)}</span>'
+                 f'<span>{esc(state.get("note", "尚无检查完成记录"))}</span></div>')
     H.append('</div></section>')
 
     for sid, title, cnt, body in sections:
@@ -1845,12 +2029,12 @@ def build_final_report(data, verdicts):
         H.append('<p class="muted">以下为需关注条目：'
                  '<b>⚠️</b> 确认需修改或存疑（对应上方"必须处理 / 存疑"卡片，'
                  '含修改建议）；<b>❓</b> 建议人工核对（证据不足以下定论，'
-                 '需读原文或查证后自行判断）；其余 ✅ 条目已确认无误，默认折叠。</p>'
+                 '需读原文或查证后自行判断）；其余条目默认折叠；徽章仅表示已有记录，不代表全部维度已核实。</p>'
                  '<table class="appendix"><thead><tr><th>ID</th><th>文献</th>'
                  '<th>结论</th><th>复核</th></tr></thead><tbody>'
                  + "".join(rows_problem) + '</tbody></table>')
     if rows_ok:
-        H.append(f'<details><summary>显示其余 {len(rows_ok)} 条已确认条目</summary>'
+        H.append(f'<details><summary>显示其余 {len(rows_ok)} 条文献（仅显示已检维度）</summary>'
                  '<table class="appendix"><thead><tr><th>ID</th><th>文献</th>'
                  '<th>结论</th><th>复核</th></tr></thead><tbody>'
                  + "".join(rows_ok) + '</tbody></table></details>')
@@ -1862,6 +2046,78 @@ def build_final_report(data, verdicts):
 </div>
 </div></body></html>""")
     return "\n".join(H)
+
+
+def _file_sha256(path):
+    """Hash source bytes without loading large documents entirely into memory."""
+    try:
+        digest = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+    except (OSError, TypeError) as ex:
+        sys.exit(f"[错误] 稿件无法读取: {path}（{ex}）。"
+                 "若文件已移动，请用 --source 指定当前稿件。")
+
+
+def review_binding(data):
+    """Bind reviews to source bytes and the current, possibly corrected, screening."""
+    paper = data.get("paper", {})
+    source_hash = paper.get("sha256")
+    if not isinstance(source_hash, str) or not re.fullmatch(r"[0-9a-f]{64}", source_hash):
+        sys.exit("[错误] 初筛缺少有效稿件指纹，请使用当前版本重新初筛。")
+    # Paths/timestamps may change when moving an audit; evidence must not change.
+    content = dict(data)
+    content["paper"] = {k: v for k, v in paper.items()
+                        if k not in ("path", "report", "checked_at")}
+    encoded = json.dumps(content, ensure_ascii=False, sort_keys=True,
+                         separators=(",", ":")).encode("utf-8")
+    return {"schema_version": 1, "source_sha256": source_hash,
+            "screening_sha256": hashlib.sha256(encoded).hexdigest()}
+
+
+def _validate_source(data, target=None, source_path=None):
+    expected = review_binding(data)["source_sha256"]
+    explicit_paper = target if target and not target.endswith(".json") else None
+    selected = source_path or explicit_paper or data["paper"].get("path")
+    # An explicit paper target must itself match, even when --source is also used.
+    for path in dict.fromkeys([selected, explicit_paper] if explicit_paper else [selected]):
+        if _file_sha256(path) != expected:
+            sys.exit("[错误] 稿件内容已变化或选错稿件，请重新初筛并复核；"
+                     "不能用旧稿结论生成当前稿件报告。")
+
+
+def _validate_binding(data, payload, target=None, source_path=None):
+    expected = review_binding(data)
+    actual = payload.get("binding") if isinstance(payload, dict) else None
+    if not isinstance(actual, dict) or actual.get("schema_version") != 1:
+        sys.exit("[错误] 复核结论缺少有效版本绑定。请先核对原稿和初筛，"
+                 "用 --prepare-final 生成新结论模板并重新确认适用结论。")
+    if actual.get("source_sha256") != expected["source_sha256"]:
+        sys.exit("[错误] 复核结论与初筛的稿件指纹不一致，请选择同一稿件版本的文件。")
+    if actual.get("screening_sha256") != expected["screening_sha256"]:
+        sys.exit("[错误] 复核结论与当前初筛内容不一致。若纠正了条目、引用对应或证据，"
+                 "请重新准备结论模板并复核受影响结论。")
+    _validate_source(data, target, source_path)
+
+
+def run_prepare_final(target, final_path=None, source_path=None):
+    """Create an empty, version-bound review template without replacing any work."""
+    target = os.path.abspath(target)
+    data_path, data = _load_refcheck_json(target)
+    _validate_source(data, target, source_path)
+    stem = os.path.splitext(os.path.basename(data["paper"]["path"]))[0]
+    final_path = final_path or os.path.join(os.path.dirname(data_path), f"{stem}_final.json")
+    payload = {"binding": review_binding(data), "verdicts": [], "checks": {}}
+    try:
+        with open(final_path, "x", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+    except FileExistsError:
+        sys.exit(f"[错误] 结论文件已存在: {final_path}。请用 --final 指定新文件，保留已有复核。")
+    except OSError as ex:
+        sys.exit(f"[错误] 无法写入结论模板: {final_path}（{ex}）")
+    print(f"✅ 待复核结论模板: {final_path}（尚无审读结论或完成记录）")
 
 
 def _load_refcheck_json(target):
@@ -1895,7 +2151,7 @@ def _load_refcheck_json(target):
         return cands[-1], json.load(f)
 
 
-def run_finalize(target, final_path=None):
+def run_finalize(target, final_path=None, source_path=None):
     target = os.path.abspath(target)
     # 直接传 _final.json 时，它本身就是复核结论文件
     if (not final_path and target.endswith("_final.json")
@@ -1918,32 +2174,26 @@ def run_finalize(target, final_path=None):
                  f"（可用 --final 指定路径）")
     with open(final_path, encoding="utf-8") as f:
         payload = json.load(f)
+    _validate_binding(data, payload, target, source_path)
     verdicts = payload.get("verdicts", payload) if isinstance(payload, dict) else payload
     _validate_verdicts(data["entries"], data.get("verification", {}), verdicts,
                        data.get("citations", []), data.get("correspondence", {}))
 
     out = os.path.join(outdir, f"{stem}_refcheck_"
                        f"{datetime.date.today().strftime('%Y%m%d')}_final.html")
-    report = build_final_report(data, verdicts)
+    checks = payload.get("checks", {}) if isinstance(payload, dict) else {}
+    _validate_checks(data, verdicts, checks)
+    report = build_final_report(data, verdicts, checks)
+    _validate_source(data, target, source_path)
     _probe_writable(outdir)
     with open(out, "w", encoding="utf-8") as f:
         f.write(report)
 
-    # F3 数据飞轮: 复核结论按 DOI 持久化，下次运行自动作为 prior_verdict
-    # 提供，同类误报（online-first 年份等）不再每篇重新人工分诊
     store = load_verdict_store()
-    by_id = {e["id"]: e for e in data["entries"]}
-    n_saved = 0
-    for v in verdicts:
-        e = by_id.get(v["id"])
-        doi = (e.get("doi") or "").lower().rstrip(".") if e else None
-        if doi:
-            store[doi] = {"final_status": v["final_status"],
-                          "verdict": v.get("verdict"), "action": v.get("action"),
-                          "date": datetime.date.today().isoformat()}
-            n_saved += 1
+    updated = updated_verdict_store(store, data, verdicts)
+    n_saved = sum(1 for key, value in updated.items() if value != store.get(key))
     if n_saved:
-        save_verdict_store(store)
+        save_verdict_store(updated)
 
     n_bad = sum(1 for v in verdicts if v["final_status"] == "warn")
     n_info = sum(1 for v in verdicts if v["final_status"] == "info")
@@ -2010,6 +2260,24 @@ def _probe_writable(outdir):
 # main
 # ---------------------------------------------------------------------------
 
+def _notify_update(offline=False):
+    """Offer bounded update advice without affecting the reference-check workflow."""
+    if offline:
+        return
+    try:
+        import importlib.util
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "check_update.py")
+        spec = importlib.util.spec_from_file_location("refcheck_update", path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        result = module.check_update(__version__)
+        if result["status"] == "available":
+            print(f"[更新提示] ob-reference-check {__version__} → {result['latest_version']}；"
+                  f"可请 AI 助手从 {module.REPOSITORY_URL} 更新。确认前继续当前检查。")
+    except Exception:
+        pass  # Optional advice cannot prevent parsing, review, or report generation.
+
+
 def main():
     ap = argparse.ArgumentParser(description="论文参考文献机械检查")
     ap.add_argument("paper", help="论文文件 (.docx/.pdf/.md)，或 --finalize/"
@@ -2021,25 +2289,37 @@ def main():
     ap.add_argument("--open-draft", action="store_true",
                     help="显式在浏览器打开自动初筛底稿（默认不打开）")
     ap.add_argument("--outdir", help="报告/数据输出目录（默认论文所在目录）")
-    ap.add_argument("--finalize", action="store_true",
+    modes = ap.add_mutually_exclusive_group()
+    modes.add_argument("--prepare-final", action="store_true",
+                       help="生成带版本绑定的空结论模板，不覆盖已有文件")
+    modes.add_argument("--finalize", action="store_true",
                     help="读 <论文>_final.json 复核结论，重渲染最终报告 HTML")
     ap.add_argument("--final", metavar="FINAL_JSON",
                     help="final.json 路径（默认: 论文同目录 <论文名>_final.json）")
-    ap.add_argument("--verify-doi", metavar="R_IDS",
+    ap.add_argument("--source", metavar="SOURCE_FILE",
+                    help="定稿/准备模板时指定已移动的源稿件，内容须与初筛相同")
+    modes.add_argument("--verify-doi", metavar="R_IDS",
                     help="批量 Crossref DOI 直查（如 R7,R16），输出 JSON 供 AI 层直接使用")
     args = ap.parse_args()
 
     if not os.path.exists(args.paper):
         sys.exit(f"[错误] 文件不存在: {args.paper}")
 
+    _notify_update(args.offline)
+    if args.source and not (args.finalize or args.prepare_final):
+        ap.error("--source 仅用于 --prepare-final 或 --finalize")
+    if args.prepare_final:
+        run_prepare_final(args.paper, args.final, args.source)
+        return
     if args.finalize:
-        run_finalize(args.paper, args.final)
+        run_finalize(args.paper, args.final, args.source)
         return
     if args.verify_doi:
         run_verify_doi(args.paper, args.verify_doi)
         return
 
     print(f"[1/5] 解析文档: {args.paper}")
+    source_hash = _file_sha256(args.paper)
     paragraphs = parse_document(args.paper)
     raw_entries, ref_idx = split_references(paragraphs)
     if raw_entries is None:
@@ -2071,13 +2351,12 @@ def main():
         if i < len(entries) and not args.offline:
             time.sleep(args.delay)
 
-    # F3 数据飞轮: 命中历史复核结论的条目附 prior_verdict，AI 层可直接沿用
     store = load_verdict_store()
     n_prior = 0
     for e in entries:
-        doi = (e.get("doi") or "").lower().rstrip(".")
-        if doi and doi in store:
-            results[e["id"]]["prior_verdict"] = store[doi]
+        prior = prior_verdict_for(e, store)
+        if prior:
+            results[e["id"]]["prior_verdict"] = prior
             n_prior += 1
     if n_prior:
         print(f"      ♻️ {n_prior} 条命中历史复核结论（见各条 prior_verdict 字段）")
@@ -2098,6 +2377,8 @@ def main():
     report_path = os.path.join(outdir, f"{stem}_refcheck_{today}.html")
     data_path = os.path.join(outdir, f"{stem}_refcheck_{today}.json")
 
+    if _file_sha256(args.paper) != source_hash:
+        sys.exit("[错误] 初筛期间稿件内容已变化，请保存稿件后重新初筛。")
     report = build_report(args.paper, entries, citations, results, corr,
                           dups, timeline, preprints, verifier.stats, cross)
     with open(report_path, "w", encoding="utf-8") as f:
@@ -2105,6 +2386,7 @@ def main():
 
     data = {
         "paper": {"path": os.path.abspath(args.paper),
+                  "sha256": source_hash,
                   "report": report_path,
                   "checked_at": datetime.datetime.now().isoformat()},
         "entries": entries,
@@ -2112,7 +2394,8 @@ def main():
         "verification": results,
         "correspondence": {
             "cited_but_missing_in_list": corr["cited_but_missing_in_list"],
-            "listed_but_never_cited": corr["listed_but_never_cited"]},
+            "listed_but_never_cited": corr["listed_but_never_cited"],
+            "ambiguous_citations": corr["ambiguous_citations"]},
         "duplicates": dups,
         "timeline": timeline,
         "preprints": preprints,
